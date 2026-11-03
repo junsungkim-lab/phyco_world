@@ -49,7 +49,7 @@ async function liveNet(db, room, user) {
       subs.push(db.collection("minimi").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data().look)); h.minimi(m); }, err("minimi")));
       subs.push(db.collection("visits").onSnapshot((s) => h.visits(s.docs.map((d) => d.data())), err("visits")));
       subs.push(db.collection("secret").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => Object.assign(m, d.data().posts || {})); h.secrets(m); }, () => {}));
-      if (id) subs.push(db.doc("coins/" + id).onSnapshot((s) => h.coins?.(s.exists ? s.data().coins || 0 : 0), () => {}));
+      if (id) subs.push(db.doc("coins/" + id).onSnapshot((s) => h.coins?.(s.exists ? s.data() : {}), () => {}));
       if (room) {
         subs.push(room.onPeers((c) => h.peers(c.peers.filter((p) => !p.sameTab).map((p) => ({ key: p.peer, by: p.by, ...p.presence })))));
       }
@@ -73,7 +73,13 @@ async function liveNet(db, room, user) {
     async addCoins(n, why) {
       if (!id) return;
       const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
-      await ref.set({ coins: (d.coins || 0) + n, log: [...(d.log || []), { n, why, at: Date.now() }].slice(-20) });
+      await ref.set({ ...d, coins: (d.coins || 0) + n, log: [...(d.log || []), { n, why, at: Date.now() }].slice(-20) });
+    },
+    async buyWeapon(w, price) {
+      if (!id) return;
+      const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
+      if ((d.coins || 0) < price) throw new Error("not enough coins");
+      await ref.set({ ...d, coins: d.coins - price, weapons: [...new Set([...(d.weapons || []), w])], log: [...(d.log || []), { n: -price, why: w, at: Date.now() }].slice(-20) });
     },
     async logVisit() {
       if (!id) return;
@@ -102,7 +108,7 @@ function localNet() {
   const emitAll = () => {
     if (!h) return;
     h.room(data.room); h.pranks([...data.pranks].sort((a, b) => a.at - b.at)); h.guestbook([...data.guestbook].sort((a, b) => b.at - a.at));
-    h.minimi(data.minimi); h.visits(data.visits); h.secrets(data.secrets); h.coins?.(data.coins || 0);
+    h.minimi(data.minimi); h.visits(data.visits); h.secrets(data.secrets); h.coins?.({ coins: data.coins || 0, weapons: data.weapons || [] });
   };
   let myPresence = {};
   if (bc) {
@@ -139,6 +145,7 @@ function localNet() {
     async deleteGuest(gid) { fresh(); data.guestbook = data.guestbook.filter((x) => x.id !== gid); save(); },
     async saveMinimi(look) { fresh(); data.minimi[meId] = look; save(); },
     async addCoins(n) { fresh(); data.coins = (data.coins || 0) + n; save(); },
+    async buyWeapon(w, price) { fresh(); data.coins = (data.coins || 0) - price; data.weapons = [...new Set([...(data.weapons || []), w])]; save(); },
     async logVisit() { fresh(); data.visits.push({ by: meId, date: today(), at: Date.now() }); save(); },
     async prunePranks(ids) { fresh(); const s = new Set(ids); data.pranks = data.pranks.filter((p) => !s.has(p.id)); save(); },
     reset() { try { localStorage.removeItem(LS_KEY); } catch {} data = { room: null, pranks: [], guestbook: [], minimi: {}, visits: [], secrets: {}, me: meId }; save(); },

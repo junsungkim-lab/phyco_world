@@ -177,8 +177,11 @@ const V = (k, i) => LOOK_OPTIONS[k].values[Math.max(0, Math.min(LOOK_OPTIONS[k].
  * Draw a minimi with its feet at (x, y). st: idle | walk | run | squat | windup. dir: 1 right, -1 left.
  * About 12 x 22 px at scale 1.
  */
-export function drawMinimi(g, x, y, look = DEFAULT_LOOK, st = "idle", t = 0, dir = 1, scale = 1) {
+export function drawMinimi(g, x, y, look = DEFAULT_LOOK, st = "idle", t = 0, dir = 1, scale = 1, weapon = "fist") {
   look = { ...DEFAULT_LOOK, ...(look || {}) };
+  // attack: a short windup (lean back), then the strike (lean in) — t is the time since the swing began
+  const atk = st === "atk" ? (t < 0.07 ? "wind" : t < 0.24 ? "hit" : "follow") : null;
+  if (atk) x += (atk === "wind" ? -1 : atk === "hit" ? 2 : 1) * dir * scale;
   const s = scale;
   const R = (xx, yy, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x + (dir < 0 ? -xx - w : xx) * s), Math.round(y + yy * s), w * s, h * s); };
   const skin = V("skin", look.skin), hairC = V("hairColor", look.hairColor), topC = V("topColor", look.topColor), botC = V("bottomColor", look.bottomColor), shoe = V("shoes", look.shoes);
@@ -209,7 +212,11 @@ export function drawMinimi(g, x, y, look = DEFAULT_LOOK, st = "idle", t = 0, dir
   if (look.top === 1) { R(-4 + sh, by, 8, 1, shade(topC)); R(-1 + sh, by + 2, 2, 2, shade(topC)); }
   if (look.top === 2) { R(-3 + sh, by, 1, 6, botC); R(2 + sh, by, 1, 6, botC); R(-3 + sh, by + 3, 6, 3, botC); }
   if (look.top === 3) { R(-1 + sh, by, 2, 5, "#ffffff"); R(-1 + sh, by, 2, 1, "#e2504e"); }
-  R(-5 + sh, by + 1, 1, 4, skin); R(4 + sh, by + 1, 1, 4, skin);
+  R(-5 + sh, by + 1, 1, 4, skin);
+  if (!atk) R(4 + sh, by + 1, 1, 4, skin);
+  else if (atk === "wind") R(-8, by + 2, 3, 2, skin);
+  else { R(4, by + 2, 5, 2, skin); if (weapon === "fist") { R(8, by + 1, 3, 3, skin); R(8, by + 1, 3, 1, "#ffffff"); } }
+  drawWeapon(R, weapon, atk, by);
   // head
   R(-5 + sh, top, 10, 9, skin);
   // face
@@ -234,6 +241,25 @@ export function drawMinimi(g, x, y, look = DEFAULT_LOOK, st = "idle", t = 0, dir
   if (a === 2) { R(-7 + sh, top - 3, 3, 3, "#ff6f91"); R(-4 + sh, top - 2, 2, 1, "#ff6f91"); }
   if (a === 3) { R(0 + sh, top + 4, 5, 1, "#2d2540"); R(0 + sh, top + 3, 2, 3, "rgba(255,255,255,0.35)"); }
   if (a === 4) { R(-4 + sh, top - 4, 8, 2, "#ffd36b"); R(-4 + sh, top - 6, 1, 2, "#ffd36b"); R(-1 + sh, top - 6, 2, 2, "#ffd36b"); R(3 + sh, top - 6, 1, 2, "#ffd36b"); }
+}
+// weapons in the front hand; R mirrors with the facing, so these are drawn facing right
+function drawWeapon(R, w, atk, by) {
+  const hit = atk === "hit" || atk === "follow";
+  if (w === "sword") {
+    if (hit) { R(7, by + 1, 1, 4, "#c9a227"); R(8, by + 2, 12, 2, "#cfd8e8"); R(8, by + 2, 12, 1, "#ffffff"); R(20, by + 2, 1, 1, "#ffffff"); }
+    else if (atk === "wind") { R(-9, by - 8, 1, 10, "#cfd8e8"); R(-10, by + 2, 3, 1, "#c9a227"); }
+    else { R(5, by - 7, 1, 10, "#cfd8e8"); R(4, by + 3, 3, 1, "#c9a227"); R(5, by + 4, 1, 2, "#8b5a33"); }
+  }
+  if (w === "spear") {
+    if (hit) { R(2, by + 2, 24, 1, "#8b5a33"); R(26, by + 1, 4, 3, "#cfd8e8"); R(30, by + 2, 1, 1, "#ffffff"); }
+    else if (atk === "wind") { R(-12, by + 2, 20, 1, "#8b5a33"); R(8, by + 1, 3, 3, "#cfd8e8"); }
+    else { R(6, by - 13, 1, 22, "#8b5a33"); R(5, by - 16, 3, 3, "#cfd8e8"); }
+  }
+  if (w === "hammer") {
+    if (hit) { R(5, by + 2, 9, 2, "#8b5a33"); R(13, by - 2, 5, 8, "#6d6680"); R(13, by - 2, 5, 1, "#a8a2b8"); }
+    else if (atk === "wind") { R(-3, by - 9, 2, 10, "#8b5a33"); R(-6, by - 13, 8, 5, "#6d6680"); }
+    else { R(6, by - 4, 1, 10, "#8b5a33"); R(4, by - 8, 5, 4, "#6d6680"); }
+  }
 }
 function shade(hex) {
   const n = parseInt(hex.slice(1), 16);

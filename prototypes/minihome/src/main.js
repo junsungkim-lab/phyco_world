@@ -22,6 +22,9 @@ import * as frog from "../vendor/pixelfx/src/fx/critters/frog.js";
 import * as slime from "../vendor/pixelfx/src/fx/critters/slime.js";
 import * as swordSlash from "../vendor/pixelfx/src/fx/melee/sword-slash.js";
 import * as doubleSlash from "../vendor/pixelfx/src/fx/melee/double-slash.js";
+import * as thrustFx from "../vendor/pixelfx/src/fx/melee/thrust.js";
+import * as damageNum from "../vendor/pixelfx/src/fx/ui/damage-number.js";
+import * as critHit from "../vendor/pixelfx/src/fx/impacts/crit-hit.js";
 import { Bgm, SONGS } from "./bgm.js";
 import { CATALOG, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
 import { connect, newId, today } from "./net.js";
@@ -73,6 +76,15 @@ const ALL_FREE = [
 ];
 const FREE = ALL_FREE.filter((f) => !f.off).map((f, i) => ({ ...f, key: String(i + 1) }));
 // coins
+// basic attacks: start bare-handed, buy the rest with coins. Furniture has HP and breaks when it runs out.
+const WEAPONS = {
+  fist: { name: "맨주먹", ico: "👊", dmg: 1, reach: 12, cd: 0.32, price: 0 },
+  sword: { name: "칼", ico: "🗡️", dmg: 2, reach: 20, cd: 0.45, price: 20 },
+  spear: { name: "창", ico: "🔱", dmg: 2, reach: 32, cd: 0.55, price: 30 },
+  hammer: { name: "망치", ico: "🔨", dmg: 4, reach: 14, cd: 0.9, price: 50 },
+};
+const HP = { bed: 8, sofa: 7, tv: 4, plant: 3, lamp: 3, rug: 4, shelf: 8, table: 5, bear: 3, frame: 2, clock: 2, poster: 2, fishbowl: 2, guitar: 4 };
+const hpOf = (it) => HP[it.type] || 3;
 const COIN_CATCH = 10;   // the owner, per wrecker caught in the act
 const COIN_RUIN = 2;     // a visitor, for turning someone's room into a ruin (mess 80+)
 const RUIN_AT = 80;
@@ -183,7 +195,7 @@ const later = (s, fn) => setTimeout(fn, s * 1000);
 let shake = 0;
 
 // ---------- derived room: the layout plus every prank since the last clean-up ----------
-let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [] };
+let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [], ko: new Set() };
 const RNG = (p) => mulberry(p.seed || hashStr(p.id));
 const isWallItem = (it) => CATALOG[it.type].layer === "wall" && !it.fallen;
 const anchorX = (def) => def.s.ax ?? def.s.width / 2;
@@ -282,9 +294,9 @@ const itemBase = (it) => ({ x: it.x + it.dx, y: it.y + it.dy });
 const itemCenter = (it) => ({ x: it.x + it.dx, y: it.y + it.dy - CATALOG[it.type].s.height / 2 });
 function derive() {
   const cleaned = room.cleanedAt || 0;
-  const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...it, dx: 0, dy: 0, rot: 0, flags: {}, fallen: false }));
+  const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...it, dx: 0, dy: 0, rot: 0, flags: {}, fallen: false, dmg: 0, dead: false }));
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
-  const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [] };
+  const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [], ko: new Set() };
   const all = [...pranks, ...botPranks].filter((p) => p.at > cleaned).sort((a, b) => a.at - b.at);
   for (const p of all) {
     const r = RNG(p);
@@ -295,6 +307,16 @@ function derive() {
       const def = CATALOG[it.type];
       const knock = (amt = 1) => { it.dx += Math.round((r() - 0.5) * 26 * amt); it.rot = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 1.1) * amt; if (def.layer !== "wall") it.dy += Math.round((r() - 0.5) * 6); };
       switch (p.kind) {
+        case "hit":
+          if (it.dead) break;
+          it.dmg += p.dmg || 1;
+          it.rot = (r() - 0.5) * 0.25 * Math.min(1, it.dmg / hpOf(it));   // leans a little more with every blow
+          if (it.dmg >= hpOf(it)) {
+            it.dead = true; it.flags.broken = 1; it.flags.sooty = 1; out.ko.add(p.id);
+            if (isWallItem(it)) { it.fallen = true; it.dy = 0; it.y = clampP(it.x, backY(it.x) + 8 + Math.floor(r() * 18)).y; }
+            knock(0.7); trash(4, ["paper", "book", "can", "sock"], it.x, it.y, 40);
+          }
+          break;
         case "kick": knock(); trash(2, ["paper", "sock", "can"], it.x, it.y); break;
         case "jump": it.flags.broken = 1; it.rot = (r() - 0.5) * 0.3; trash(3, ["paper", "sock"], it.x, it.y); break;
         case "burn": out.fires.push({ key: p.id, x: it.x + it.dx, y: clampP(it.x + it.dx, it.y + it.dy + 1).y, at: p.at, small: true }); break;
@@ -372,6 +394,18 @@ function playPrank(p) {
     case "water": spawn(splash, b.x, b.y - 2, { stone: false }); break;
     case "doodle": spawn(hitSpark, c.x, c.y); text("LOL"); break;
     case "drop": spawn(blunt, b.x, b.y, { height: 8 }); text("CLANG!"); break;
+    case "hit": {
+      if (!it) break;
+      hitAnim.set(it.id, performance.now());
+      const w = p.w || "fist", top = c.y - h / 2;
+      if (w === "sword") spawn(swordSlash, p.x + p.dir * 4, p.y, { flip: p.dir < 0, radius: 16 });
+      else if (w === "spear") spawn(thrustFx, p.x, p.y, { flip: p.dir < 0, reach: 30 });
+      if (w === "hammer") { spawn(blunt, b.x, b.y, { height: 16 }); shake = Math.max(shake, 0.35); }
+      else { spawn(blunt, c.x, c.y + 4, { height: 8 }); spawn(hitSpark, c.x, c.y); shake = Math.max(shake, 0.1); }
+      spawn(damageNum, c.x + 4, top, { text: "-" + (p.dmg || 1) });
+      if (D.ko.has(p.id)) { spawn(critHit, c.x, c.y + 8, { height: 16 }); later(0.15, () => spawn(pow, c.x, top, { text: "KO!" })); shake = 0.5; }
+      break;
+    }
     case "poop": spawn(poof, b.x, b.y, { palette: ["#3a2412", "#6a3e1e", "#8b5a2b", "#b07a4a"] }); text("PLOP!"); shake = 0.2; break;
     case "fart": { const f = spawn(poison, b.x, b.y, { spread: 0.45 }); later(1.8, () => f.stop()); text("PFFT!"); break; }
     case "fire": spawn(fireRing, b.x, b.y, { reach: 46 }); break;
@@ -425,7 +459,7 @@ function moveActor(dt) {
   if (vx || vy) { moveTarget = null; pendingItem = null; closeMenu(); }
   else if (moveTarget) {
     const ddx = moveTarget.x - actor.x, ddy = moveTarget.y - actor.y, d = Math.hypot(ddx, ddy);
-    if (d < 1.5) { moveTarget = null; if (pendingItem) { const it = D.items.find((i) => i.id === pendingItem); pendingItem = null; if (it) { actor.dir = itemBase(it).x < actor.x ? -1 : 1; openMenu(it); } } }
+    if (d < 1.5) { moveTarget = null; if (pendingHit) { const it = D.items.find((i) => i.id === pendingHit); pendingHit = null; if (it) { actor.dir = itemBase(it).x < actor.x ? -1 : 1; attack(); } } if (pendingItem) { const it = D.items.find((i) => i.id === pendingItem); pendingItem = null; if (it) { actor.dir = itemBase(it).x < actor.x ? -1 : 1; openMenu(it); } } }
     else { vx = ddx / d; vy = ddy / d; }
   }
   const len = Math.hypot(vx, vy);
@@ -512,6 +546,73 @@ function renderCooldowns() {
   });
 }
 
+// ---------- basic attack ----------
+let weapon = "fist";
+let owned = ["fist"];
+let atkReady = 0, atkUntil = 0;
+let pendingHit = null;
+const hitAnim = new Map();           // item id -> when it was last hit (wobble + flash)
+const hitLogged = new Set();
+function attackTarget(w) {
+  const hx = actor.x + actor.dir * w.reach;
+  let best = null, bd = 1e9;
+  for (const it of D.items) {
+    if (it.dead || CATALOG[it.type].flat) continue;
+    const q = bbox(it);
+    if (isWallItem(it)) { if (actor.y - backY(actor.x) > 18) continue; }
+    else if (actor.y < q.y1 - 34 || actor.y > q.y1 + 8) continue;
+    const lo = Math.min(actor.x, hx), hi = Math.max(actor.x, hx);
+    if (q.x1 < lo || q.x0 > hi) continue;
+    const d = actor.dir > 0 ? Math.max(0, q.x0 - actor.x) : Math.max(0, actor.x - q.x1);
+    if (d < bd) { bd = d; best = it; }
+  }
+  return best;
+}
+function attack() {
+  if (!actor.on || busy || !net) return;
+  const w = WEAPONS[weapon], t = performance.now();
+  if (t < atkReady) return;
+  atkReady = t + w.cd * 1000; atkUntil = t + 320;
+  actor.st = "atk"; actor.t = 0; pushPresence(true);
+  const it = attackTarget(w);
+  if (!it) {   // a swing at the air
+    if (weapon === "sword") spawn(swordSlash, actor.x + actor.dir * 4, actor.y, { flip: actor.dir < 0, radius: 16 });
+    if (weapon === "spear") spawn(thrustFx, actor.x, actor.y, { flip: actor.dir < 0, reach: 30 });
+    return;
+  }
+  if (!me.canWrite) { toast("때리려면 홈피 주인이 공유 메뉴에서 '참여자(Contributor)' 이상으로 초대해야 해요."); return; }
+  const p = { id: newId(), kind: "hit", item: it.id, w: weapon, dmg: w.dmg, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, by: me.id, nick: myNick(), at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
+  later(0.07, () => {
+    pranks.push(p); derive(); playPrank(p);
+    net.addPrank(p).catch(() => toast("저장하지 못했어요. 권한을 확인해 주세요."));
+    const name = CATALOG[it.type].name;
+    if (D.ko.has(p.id)) done.push(`${name}을(를) ${w.name}(으)로 박살냈어요`);
+    else if (!hitLogged.has(it.id)) { hitLogged.add(it.id); done.push(`${name}을(를) 후려팼어요`); }
+    checkRuin();
+    if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+  });
+}
+function renderWeapons() {
+  const box = $("weapons"); box.replaceChildren();
+  for (const [id, w] of Object.entries(WEAPONS)) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "wpn";
+    const have = owned.includes(id);
+    b.setAttribute("aria-pressed", String(weapon === id));
+    b.innerHTML = `<span class="ico" aria-hidden="true">${w.ico}</span><b></b><small></small>`;
+    b.querySelector("b").textContent = w.name;
+    b.querySelector("small").textContent = have ? `공격력 ${w.dmg} · 사거리 ${w.reach}` : `🪙 ${w.price}코인에 사기`;
+    if (!have) b.classList.add("locked");
+    b.addEventListener("click", () => {
+      if (have) { weapon = id; renderWeapons(); pushPresence(true); return; }
+      if (myCoins < w.price) { toast(`코인이 부족해요. ${w.name}은(는) ${w.price}코인이에요.`); return; }
+      myCoins -= w.price; owned = [...owned, id]; weapon = id; renderCoins(); renderWeapons();
+      net?.buyWeapon(id, w.price).catch(() => {});
+      toast(`${w.ico} ${w.name}을(를) 샀어요!`);
+    });
+    box.append(b);
+  }
+}
+
 // the owner is in the room: every visitor still wrecking (escape timer running) is caught, +10 each
 const caughtVisits = new Set();
 function catchWreckers() {
@@ -589,6 +690,12 @@ function botTick(dt) {
         const def = CATALOG[it.type], bb = itemBase(it), wall = def.layer === "wall" && !it.fallen;
         b.target = { ...(wall ? clampP(bb.x, backY(bb.x) + 6) : clampP(bb.x + 12, bb.y + 4)), item: it.id, kind: acts[Math.floor(Math.random() * acts.length)] };
         b.st = "walk";
+      } else if (Math.random() < 0.55 && D.items.some((i) => !i.dead && !CATALOG[i.type].flat && !isWallItem(i))) {
+        // walk up to a piece of furniture and punch it a few times
+        const pool = D.items.filter((i) => !i.dead && !CATALOG[i.type].flat && !isWallItem(i));
+        const it = pool[Math.floor(Math.random() * pool.length)], bb = itemBase(it);
+        b.target = { ...clampP(bb.x + (b.x < bb.x ? -12 : 12), bb.y + 4), item: it.id, kind: "hit", hits: 2 + Math.floor(Math.random() * 3) };
+        b.st = "walk";
       } else {
         b.target = { ...randomFloor(), kind: FREE[Math.floor(Math.random() * FREE.length)].kind };
         b.st = "walk";
@@ -599,6 +706,16 @@ function botTick(dt) {
     if (d > sp) { b.x += (ddx / d) * sp; b.y += (ddy / d) * sp; continue; }
     b.x = t.x; b.y = t.y; b.target = null;
     if (t.exit) { spawn(poof, DOOR.x, DOOR.y + 4); bots.splice(bots.indexOf(b), 1); continue; }
+    if (t.kind === "hit") {
+      const it = D.items.find((i) => i.id === t.item);
+      if (!it || it.dead) { b.left--; continue; }
+      b.dir = itemBase(it).x < b.x ? -1 : 1; b.st = "atk"; b.t = 0; b.wait = 0.5;
+      const p = { id: "b" + newId(), kind: "hit", item: it.id, w: "fist", dmg: 1, x: Math.round(b.x), y: Math.round(b.y), dir: b.dir, by: null, nick: b.nick, at: Date.now() + 70, seed: Math.floor(Math.random() * 1e9) };
+      later(0.07, () => { botPranks.push(p); derive(); playPrank(p); b.wanted = true; });
+      later(0.35, () => { if (b.st === "atk") b.st = "idle"; });
+      if (--t.hits > 0) b.target = t; else b.left--;
+      continue;
+    }
     b.st = "windup"; b.t = 0; b.wait = 0.9;
     b.say = ["ㅋㅋㅋ", "으랴!", "흐흐", "이거나 먹어라"][Math.floor(Math.random() * 4)]; b.sayUntil = Date.now() + 1200;
     const p = { id: "b" + newId(), kind: t.kind, item: t.item || null, x: Math.round(b.x), y: Math.round(b.y), by: null, nick: b.nick, at: Date.now() + 600, seed: Math.floor(Math.random() * 1e9) };
@@ -638,11 +755,13 @@ function drawItem(it) {
   }
   const b = itemBase(it);
   ctx.save();
-  ctx.translate(Math.round(b.x), Math.round(b.y));
+  const since = performance.now() - (hitAnim.get(it.id) || -1e9), struck = since < 180;
+  ctx.translate(Math.round(b.x + (struck ? Math.round(Math.sin(since / 18) * 2) : 0)), Math.round(b.y + (struck && since < 60 ? 1 : 0)));
   if (isWallItem(it)) ctx.transform(1, wallSide(b.x) * 0.5, 0, 1, 0, 0);   // lie flat on the wall plane
   if (it.rot) ctx.rotate(it.rot);
   if (it.flip) ctx.scale(-1, 1);
   ctx.drawImage(src, -Math.round(anchorX(def)), -s.height);
+  if (struck && since < 90) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.75; ctx.drawImage(src, -Math.round(anchorX(def)), -s.height); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; }
   ctx.restore();
   const outline = (col, dash) => { const q = bbox(it); ctx.strokeStyle = col; ctx.setLineDash(dash ? [2, 2] : []); ctx.lineWidth = 1; ctx.strokeRect(Math.round(q.x0) - 1.5, Math.round(q.y0) - 1.5, Math.round(q.x1 - q.x0) + 3, Math.round(q.y1 - q.y0) + 3); ctx.setLineDash([]); };
   if (decorating && it.id === selectedId) outline("#ff6f91", true);
@@ -686,10 +805,19 @@ function render(now) {
   for (const it of D.items) if (!isWall(it) && !CATALOG[it.type].flat) list.push([itemBase(it).y, () => drawItem(it)]);
   for (const t of D.trash) list.push([t.y - 0.5, () => drawTrash(t)]);
   for (const p of D.poops) list.push([p.y, () => drawPoop(p, now)]);
-  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) list.push([pp.y + 0.05, () => drawMinimi(ctx, pp.x, pp.y, p.look, p.st, now, p.dir)]); }
-  for (const b of bots) list.push([b.y + 0.05, () => drawMinimi(ctx, b.x, b.y, b.look, b.st, b.t, b.dir)]);
-  if (actor.on) list.push([actor.y + 0.1, () => drawMinimi(ctx, actor.x, actor.y, myLook, actor.st, actor.t, actor.dir)]);
+  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) list.push([pp.y + 0.05, () => drawMinimi(ctx, pp.x, pp.y, p.look, p.st, p.st === "atk" ? now - (pp.atkStart || now) : now, p.dir, 1, p.wp)]); }
+  for (const b of bots) list.push([b.y + 0.05, () => drawMinimi(ctx, b.x, b.y, b.look, b.st, b.t, b.dir, 1, "fist")]);
+  if (actor.on) list.push([actor.y + 0.1, () => drawMinimi(ctx, actor.x, actor.y, myLook, actor.st, actor.t, actor.dir, 1, weapon)]);
   list.sort((a, b) => a[0] - b[0]).forEach((d) => d[1]());
+  // HP bars: on furniture that has been hit, and on the one under the pointer
+  for (const it of D.items) {
+    if (it.dead || CATALOG[it.type].flat || (!it.dmg && hoverItem !== it.id)) continue;
+    const q = bbox(it), hp = hpOf(it), left = Math.max(0, hp - it.dmg), w = Math.min(24, 4 + hp * 3);
+    const x = Math.round((q.x0 + q.x1) / 2 - w / 2), y = Math.round(q.y0 - 5);
+    ctx.fillStyle = "#2d2540"; ctx.fillRect(x - 1, y - 1, w + 2, 4);
+    ctx.fillStyle = "#5a2030"; ctx.fillRect(x, y, w, 2);
+    ctx.fillStyle = left / hp > 0.5 ? "#56d364" : left / hp > 0.25 ? "#ffd36b" : "#ff5a4a"; ctx.fillRect(x, y, Math.round((w * left) / hp), 2);
+  }
   clearFrame(frame);
   for (const fx of fxList) fx.draw(frame);
   composite(frame, img.data, null);
@@ -733,6 +861,7 @@ function tick(nowMs) {
   if (actor.on) {
     actor.t += dt;
     if (activeTab === "home") moveActor(dt);
+    if (actor.st === "atk" && performance.now() > atkUntil) actor.st = "idle";
     if (heat && !busy) {
       heat.left -= dt; $("timerNum").textContent = Math.max(0, heat.left).toFixed(1);
       if (heat.left <= 0) finishVisit(true);
@@ -744,6 +873,8 @@ function tick(nowMs) {
     let pp = peerPos.get(p.key);
     if (!pp) { pp = { x: p.x, y: p.y }; peerPos.set(p.key, pp); }
     pp.x += (p.x - pp.x) * Math.min(1, dt * 12); pp.y += (p.y - pp.y) * Math.min(1, dt * 12);
+    if (p.st === "atk" && pp.st !== "atk") pp.atkStart = now;
+    pp.st = p.st;
   }
   botTick(dt);
   placePersistent(now);
@@ -764,7 +895,7 @@ let lastPres = "";
 function isHostPeer(p) { return !!(p.host && (net?.mode === "local" || (room.ownerId && p.by === room.ownerId))); }
 function pushPresence(force) {
   if (!net) return;
-  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on && FEATURES.skills ? myJob : null, visit: visitId };
+  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on && FEATURES.skills ? myJob : null, visit: visitId, wp: weapon };
   const s = JSON.stringify(p);
   if (s !== lastPres || force) { lastPres = s; net.presence(p); }
 }
@@ -796,6 +927,11 @@ canvas.addEventListener("pointerdown", (e) => {
   closeMenu();
   const it = hit(p);
   if (it && FEATURES.itemPranks) { pendingItem = it.id; moveTarget = approach(it); return; }
+  if (it && !it.dead && !CATALOG[it.type].flat) {   // tap furniture: walk up and hit it (if already there, just hit)
+    const t = attackTarget(WEAPONS[weapon]);
+    if (t && t.id === it.id) { attack(); return; }
+    pendingHit = it.id; moveTarget = approach(it); return;
+  }
   moveTarget = clampP(p.x, p.y);
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -826,6 +962,7 @@ document.addEventListener("keydown", (e) => {
   if (k) { keys.add(k); e.preventDefault(); return; }
   const f = FREE.find((x) => x.key === e.key);
   if (f) { doAction(f.kind, null); return; }
+  if (e.code === "Space" || e.code === "KeyA") { e.preventDefault(); attack(); return; }
   const si = ["KeyQ", "KeyW", "KeyE", "KeyR"].indexOf(e.code);
   if (si >= 0 && !e.repeat && FEATURES.skills) { e.preventDefault(); castSkill(si); return; }
   if ((e.code === "KeyF" || e.code === "Space") && FEATURES.itemPranks) { e.preventDefault(); const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 F(또는 스페이스)를 눌러 주세요."); }
@@ -940,6 +1077,12 @@ $("removeBtn").addEventListener("click", removeSelected);
 $("flipBtn").addEventListener("click", flipSelected);
 $("cleanBtn").addEventListener("click", cleanUp);
 const freeBox = $("freeActions");
+{
+  const b = document.createElement("button"); b.type = "button"; b.className = "act atk"; b.dataset.free = "atk";
+  b.innerHTML = `<span class="ico" aria-hidden="true">👊</span><b>때리기</b><small>스페이스</small>`;
+  b.addEventListener("click", attack);
+  freeBox.append(b);
+}
 for (const f of FREE) {
   const b = document.createElement("button"); b.type = "button"; b.className = "act"; b.dataset.free = f.kind;
   b.innerHTML = `<span class="ico" aria-hidden="true">${f.ico}</span><b></b><small>${f.key}</small>`;
@@ -994,7 +1137,7 @@ function renderCounter() {
 }
 function messScore() {
   let s = 0;
-  for (const it of D.items) s += (it.rot || it.dx ? 6 : 0) + Object.keys(it.flags).length * 6 + charOf(it) * 6 + (it.fallen ? 6 : 0);
+  for (const it of D.items) s += (it.dead ? 10 : it.dmg * 2) + (it.rot || it.dx ? 6 : 0) + Object.keys(it.flags).length * 6 + charOf(it) * 6 + (it.fallen ? 6 : 0);
   s += D.trash.length + D.goo.length * 4 + D.poops.length * 12 + D.fires.length * 14 + D.critters.length * 10 + D.ghosts.length * 8;
   return Math.min(100, Math.round(s));
 }
@@ -1189,7 +1332,7 @@ async function resolveNames() {
 function loadLocalLook() { try { return JSON.parse(localStorage.getItem("phyco-look") || "null"); } catch { return null; } }
 myLook = loadLocalLook() || randomLook(Date.now());
 setTab("home");
-derive(); renderProfile(); renderGuestbook(); renderNews(); renderBgm(); renderCounter(); renderControls(); renderNet();
+derive(); renderProfile(); renderGuestbook(); renderNews(); renderBgm(); renderCounter(); renderControls(); renderNet(); renderWeapons();
 (function portrait(t) { drawPortrait(t / 1000); if (activeTab === "minimi") drawPreview(t / 1000); requestAnimationFrame(portrait); })(0);
 requestAnimationFrame((t) => { last = t; tick(t); });
 
@@ -1216,7 +1359,7 @@ connect().then((n) => {
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
     visits(list) { visits = list; renderCounter(); },
     peers(list) { peers = list; resolveNames(); },
-    coins(n) { myCoins = n; renderCoins(); },
+    coins(d) { myCoins = d.coins || 0; owned = ["fist", ...(d.weapons || [])]; if (!owned.includes(weapon)) weapon = "fist"; renderCoins(); renderWeapons(); },
     error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
   });
   renderControls(); renderProfile(); renderGuestbook(); renderBgm();
