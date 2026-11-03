@@ -1,0 +1,239 @@
+<title>phyco world</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap">
+<style>
+/* Layout: a pixel "diary" window — profile column on the left, BGM bar + mini room + guestbook on the right; stacks on phones. */
+:root {
+  --ground: #e7e0f2;      /* page */
+  --dots: #d8cde9;
+  --paper: #fffaf3;       /* panels */
+  --ink: #2d2540;
+  --muted: #6f6688;
+  --line: #d9cde8;
+  --berry: #ff6f91;       /* accent: owner / pranks */
+  --berry-ink: #b8325a;
+  --mint: #3fa7a0;        /* secondary: BGM */
+  --sun: #ffd36b;
+  --char: #3a2a26;
+  --display: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--ground);
+  background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+  background-size: 14px 14px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--sun); outline-offset: 1px; }
+.app { max-width: 980px; margin: 0 auto; display: grid; gap: 12px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding: 0 4px; }
+.logo { font-family: var(--display); font-size: 30px; margin: 0; letter-spacing: 0.01em; line-height: 1; }
+.logo i { font-style: normal; color: var(--berry); }
+.logo small { font-family: var(--body); font-size: 13px; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
+.counter { font-size: 12px; letter-spacing: 0.12em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.counter b { color: var(--berry-ink); font-size: 15px; letter-spacing: 0; margin-left: 4px; }
+.counter span { margin: 0 8px; color: var(--line); }
+
+.book {
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 0;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 14px;
+  box-shadow: 6px 6px 0 var(--ink); overflow: hidden;
+}
+.side { padding: 18px 16px; border-right: 2px dashed var(--line); display: grid; gap: 14px; align-content: start; }
+.main { padding: 16px 18px 20px; display: grid; gap: 16px; min-width: 0; }
+
+.minime-box { display: grid; place-items: center; background: #fdeef4; border: 2px solid var(--line); border-radius: 10px; padding: 10px; }
+#minime { width: 96px; height: 96px; image-rendering: pixelated; }
+.field { display: grid; gap: 4px; }
+.label { font-size: 11px; letter-spacing: 0.14em; color: var(--muted); }
+.side input, .side select, .side textarea { width: 100%; border: 2px solid var(--line); border-radius: 8px; background: #fff; padding: 6px 8px; }
+.side textarea { resize: vertical; min-height: 60px; font-size: 14px; }
+
+.modes { display: grid; gap: 6px; }
+.mode-btn { text-align: left; border: 2px solid var(--ink); border-radius: 10px; background: #fff; padding: 8px 10px; font-family: var(--display); font-size: 16px; line-height: 1.2; }
+.mode-btn small { display: block; font-family: var(--body); font-size: 12px; color: var(--muted); }
+.mode-btn[aria-pressed="true"] { background: var(--berry); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.mode-btn[aria-pressed="true"] small { color: #ffe6ee; }
+.mode-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.meter { display: grid; gap: 6px; }
+.meter-row { display: flex; justify-content: space-between; align-items: baseline; }
+.meter-row b { font-family: var(--display); font-size: 18px; font-weight: 400; }
+.meter-num { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.meter-bar { height: 12px; border: 2px solid var(--ink); border-radius: 6px; background: #fff; overflow: hidden; }
+#meterFill { height: 100%; width: 0; background: repeating-linear-gradient(45deg, var(--berry) 0 6px, #ff8fab 6px 12px); transition: width 0.4s; }
+.reset { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12px; text-decoration: underline; justify-self: start; }
+
+.bgm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; border: 2px solid var(--mint); border-radius: 10px; padding: 8px 10px; background: #effaf8; }
+.eq { display: flex; gap: 2px; align-items: flex-end; height: 16px; width: 18px; }
+.eq i { display: block; width: 4px; height: 4px; background: var(--mint); }
+.eq.on i { animation: eq 0.6s steps(3) infinite alternate; }
+.eq.on i:nth-child(2) { animation-delay: 0.2s; } .eq.on i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes eq { to { height: 16px; } }
+.song { flex: 1 1 140px; min-width: 0; }
+.song b { font-family: var(--display); font-weight: 400; font-size: 17px; display: block; line-height: 1.2; }
+.song span { font-size: 12px; color: var(--muted); }
+.bgm-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 2px solid var(--ink); background: #fff; border-radius: 999px; padding: 3px 12px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--mint); color: #fff; }
+.chip:disabled { opacity: 0.45; cursor: default; }
+body[data-mode="visitor"] #setBgmBtn { display: none; }
+
+h2 { font-family: var(--display); font-weight: 400; font-size: 20px; margin: 0; display: flex; align-items: baseline; gap: 8px; }
+h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); letter-spacing: 0.12em; }
+.room { display: grid; gap: 8px; }
+.stage { position: relative; border: 3px solid var(--ink); border-radius: 8px; overflow: hidden; background: #fdeef4; max-width: 100%; }
+#room { display: block; width: 100%; aspect-ratio: 320 / 200; image-rendering: pixelated; touch-action: none; cursor: grab; }
+body[data-mode="visitor"] #room { cursor: default; }
+#room.aiming { cursor: crosshair; }
+#bubble { position: absolute; transform: translate(-50%, -100%); background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 2px 10px; font-family: var(--display); font-size: 15px; white-space: nowrap; pointer-events: none; }
+#bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 8px; height: 8px; background: #fff; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateX(-50%) rotate(45deg); }
+.hint { font-size: 13px; color: var(--muted); margin: 0; min-height: 1.5em; }
+
+.tools { display: grid; gap: 10px; }
+.palette { display: flex; flex-wrap: wrap; gap: 6px; }
+.pal { display: grid; justify-items: center; gap: 2px; min-width: 64px; border: 2px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 6px 4px; font-size: 12px; }
+.pal:hover { border-color: var(--berry); }
+.pal canvas { image-rendering: pixelated; height: auto; max-height: 36px; }
+.tool-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tool-row .grow { flex: 1 1 160px; font-size: 13px; color: var(--muted); }
+.btn { border: 2px solid var(--ink); border-radius: 10px; background: #fff; padding: 7px 14px; font-family: var(--display); font-size: 15px; }
+.btn.primary { background: var(--mint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+.pranks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.prank { border: 3px solid var(--ink); border-radius: 12px; background: #fff; padding: 10px 8px; display: grid; gap: 2px; justify-items: center; text-align: center; box-shadow: 3px 3px 0 var(--ink); transition: transform 0.08s; }
+.prank .ico { font-size: 26px; line-height: 1; }
+.prank b { font-family: var(--display); font-weight: 400; font-size: 16px; line-height: 1.2; }
+.prank small { font-size: 11px; color: var(--muted); }
+.prank:hover:not(:disabled) { transform: translate(-1px, -1px); }
+.prank[aria-pressed="true"] { background: var(--sun); }
+.prank:disabled { opacity: 0.5; cursor: wait; }
+.visitor-name { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.visitor-name input { flex: 1 1 auto; min-width: 0; border: 2px solid var(--line); border-radius: 8px; padding: 6px 8px; background: #fff; }
+
+.guestbook { display: grid; gap: 10px; }
+#gbForm { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 6px; }
+#gbForm input { border: 2px solid var(--line); border-radius: 8px; padding: 7px 9px; background: #fff; min-width: 0; }
+#gbList { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 340px; overflow-y: auto; }
+#gbList li { border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; }
+#gbList li.auto { background: #fff3f6; border-color: #ffc2d1; }
+.gb-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.gb-head time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.tag { font-size: 11px; color: var(--berry-ink); border: 1px solid #ffc2d1; border-radius: 999px; padding: 0 8px; }
+#gbList p { margin: 2px 0 0; overflow-wrap: anywhere; }
+
+#toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 14px; max-width: calc(100% - 32px); text-align: center; z-index: 5; }
+.foot { font-size: 12px; color: var(--muted); text-align: center; margin: 4px 0 0; }
+.foot a { color: inherit; }
+
+@media (max-width: 760px) {
+  .book { grid-template-columns: 1fr; }
+  .side { border-right: 0; border-bottom: 2px dashed var(--line); grid-template-columns: 96px minmax(0, 1fr); }
+  .side > :not(.minime-box):not(.who) { grid-column: 1 / -1; }
+  #minime { width: 72px; height: 72px; }
+  .modes { grid-template-columns: 1fr 1fr; }
+  #gbForm { grid-template-columns: 1fr 1fr; }
+  #gbForm #gbMsg { grid-column: 1 / -1; order: -1; }
+}
+@media (max-width: 420px) {
+  .pranks { grid-template-columns: 1fr; }
+  .prank { grid-template-columns: auto 1fr; justify-items: start; text-align: left; column-gap: 10px; }
+  .prank .ico { grid-row: span 2; align-self: center; }
+}
+@media (prefers-reduced-motion: reduce) { .eq.on i { animation: none; height: 10px; } #meterFill { transition: none; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1 class="logo">phy<i>(co)</i> world <small>꾸미면 망가뜨리러 오는 미니홈피</small></h1>
+    <div class="counter" aria-label="방문자 수">TODAY<b id="today">0</b><span>|</span>TOTAL<b id="total">0</b></div>
+  </header>
+
+  <div class="book">
+    <aside class="side">
+      <div class="minime-box"><canvas id="minime" width="32" height="32" aria-label="주인 미니미"></canvas></div>
+      <div class="field who"><label class="label" for="ownerName">홈피 주인</label><input id="ownerName" maxlength="12"></div>
+      <div class="field"><label class="label" for="mood">TODAY IS</label>
+        <select id="mood"><option>들뜸</option><option>평온</option><option>졸림</option><option>배고픔</option><option>복수심</option></select></div>
+      <div class="field"><label class="label" for="intro">한 줄 소개</label><textarea id="intro" maxlength="60"></textarea></div>
+      <div class="modes" role="group" aria-label="모드">
+        <button type="button" class="mode-btn" id="modeOwner" aria-pressed="true">내 방 꾸미기<small>주인 모드</small></button>
+        <button type="button" class="mode-btn" id="modeVisitor" aria-pressed="false">친구로 놀러가기<small>방문자 모드</small></button>
+      </div>
+      <div class="meter">
+        <div class="meter-row"><span class="label">난장판 지수</span><span class="meter-num"><span id="meterNum">0</span> / 100</span></div>
+        <div class="meter-bar"><div id="meterFill"></div></div>
+        <div class="meter-row"><b id="meterLabel">반짝반짝</b></div>
+      </div>
+      <button type="button" class="reset" id="resetBtn">예시 방으로 되돌리기</button>
+    </aside>
+
+    <main class="main">
+      <div class="bgm" aria-label="배경음악">
+        <div class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="song"><b id="songTitle">도트 산책</b><span id="songMeta">우리집 BGM</span></div>
+        <div class="bgm-btns">
+          <button type="button" class="chip" id="prevBtn" aria-label="이전 곡">이전</button>
+          <button type="button" class="chip" id="playBtn" aria-pressed="false">재생</button>
+          <button type="button" class="chip" id="nextBtn" aria-label="다음 곡">다음</button>
+          <button type="button" class="chip" id="setBgmBtn">우리집 BGM으로</button>
+        </div>
+      </div>
+
+      <section class="room" aria-label="미니룸">
+        <h2>미니룸 <small>MINI ROOM</small></h2>
+        <div class="stage">
+          <canvas id="room" aria-label="꾸밀 수 있는 미니룸"></canvas>
+          <div id="bubble" hidden></div>
+        </div>
+        <p class="hint" id="hint"></p>
+
+        <div class="tools" id="ownerTools">
+          <div class="palette" id="palette" aria-label="가구 넣기"></div>
+          <div class="tool-row">
+            <span class="grow" id="selName"></span>
+            <button type="button" class="btn" id="removeBtn" disabled>선택한 가구 빼기</button>
+            <button type="button" class="btn primary" id="cleanBtn" disabled>청소하기</button>
+          </div>
+        </div>
+
+        <div class="tools" id="visitorTools" hidden>
+          <label class="visitor-name" for="visitorName">내 이름 <input id="visitorName" maxlength="12" placeholder="익명의 손님" value="동훈"></label>
+          <div class="pranks">
+            <button type="button" class="prank" data-prank="mess" aria-pressed="false"><span class="ico" aria-hidden="true">🌀</span><b>어지럽히고 도망가기</b><small>가구를 다 뒤집어 놔요</small></button>
+            <button type="button" class="prank" data-prank="fire" aria-pressed="false"><span class="ico" aria-hidden="true">🔥</span><b>불 지피기</b><small>근처 가구가 그을려요</small></button>
+            <button type="button" class="prank" data-prank="poop" aria-pressed="false"><span class="ico" aria-hidden="true">💩</span><b>똥 싸고 도망가기</b><small>파리도 따라와요</small></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="guestbook" aria-label="방명록">
+        <h2>방명록 <small><span id="gbCount">0</span> GUESTBOOK</small></h2>
+        <form id="gbForm">
+          <input id="gbName" maxlength="12" placeholder="이름" aria-label="이름">
+          <input id="gbMsg" maxlength="120" placeholder="한마디 남기기" aria-label="방명록 글">
+          <button class="btn primary" type="submit">남기기</button>
+        </form>
+        <ul id="gbList"></ul>
+      </section>
+    </main>
+  </div>
+  <p class="foot">프로토타입: 저장은 이 브라우저에만 됩니다. 이펙트 <a href="https://github.com/patch-gg/pixelfx" target="_blank" rel="noopener">pixelfx</a> (MIT)</p>
+</div>
+<div id="toast" role="status" hidden></div>
+<script>/*BUNDLE*/</script>

@@ -1,0 +1,50 @@
+# Prototype: minihome (phyco world)
+
+친구 미니홈피에 놀러 가서 방을 망가뜨리는 장난 미니홈피의 첫 프로토타입입니다.
+설계는 [`design/game-brief.md`](../../design/game-brief.md)에 있습니다.
+
+## Hypothesis
+
+"예쁘게 꾸민 방을 친구가 3초 만에 망가뜨리고, 그 흔적이 방명록에 남는다"는 루프만으로도
+웃기고, 다시 꾸미고 복수하러 가고 싶어진다.
+
+## How to run
+
+- 바로 보기: `dist/index.html`을 더블클릭해서 브라우저로 엽니다. 설치는 필요 없습니다.
+- 수정 후 다시 빌드:
+  ```bash
+  cd prototypes/minihome
+  npm i --no-save esbuild@0.25.10
+  node build.mjs        # dist/index.html, dist/artifact.html 생성
+  ```
+
+## 들어 있는 것
+
+| 기능 | 내용 |
+|---|---|
+| 방문자 수 | TODAY / TOTAL. "친구로 놀러가기"를 누를 때마다 +1 (날짜가 바뀌면 TODAY 초기화) |
+| 방명록 | 이름 + 글 + 시간. 장난을 치면 "장난 기록"이 자동으로 남음 |
+| BGM | 직접 만든 칩튠 3곡(WebAudio). 이전/다음/재생, 주인 모드에서 "우리집 BGM" 지정 |
+| 미니룸 꾸미기 | 가구 12종 넣기, 끌어서 옮기기, 선택 후 빼기(Delete 키도 됨) |
+| 장난 3종 | 어지럽히고 도망가기, 불 지피기(근처 가구가 점점 그을림), 똥 싸고 도망가기(파리 + 냄새) |
+| 청소하기 | 주인 모드에서 한 번에 원상복구 |
+| 난장판 지수 | 0~100, 방이 얼마나 망가졌는지 |
+
+## Status
+
+in-progress
+
+## Findings
+
+(플레이해 보고 채울 것)
+
+## 알려진 한계
+
+- 저장은 브라우저 localStorage에만 됩니다. 진짜로 친구가 내 방에 들어오려면 서버가 필요합니다.
+- 방문자는 "모드 전환"으로 흉내 낸 것입니다. 로그인, 다른 사람 홈피 목록 없음.
+
+## Credits
+
+- 이펙트(모닥불, 불꽃 링, 펑, 연기, 꽃가루): [pixelfx](https://github.com/patch-gg/pixelfx) `a841596`,
+  MIT. `vendor/pixelfx/`에 필요한 파일만 복사했고 원본 LICENSE와 NOTICE를 함께 두었습니다.
+- 가구, 캐릭터, 똥 도트와 BGM 3곡은 이 프로토타입용으로 새로 만든 것입니다.
