@@ -105,7 +105,7 @@ const SAMPLE_ITEMS = () => [
   { id: "i7", type: "table", x: 160, y: 168 }, { id: "i8", type: "bear", x: 196, y: 176 }, { id: "i9", type: "frame", x: 98, y: 80 },
   { id: "i10", type: "clock", x: 180, y: 58 }, { id: "i11", type: "poster", x: 214, y: 80 }, { id: "i12", type: "sofa", x: 196, y: 112, flip: true },
 ];
-const sampleRoom = () => ({ items: SAMPLE_ITEMS(), wall: "stripe", floor: "wood", bgm: 0, mood: "들뜸", intro: "꾸미느라 3시간 걸림. 건드리면 죽음", title: "어서 와, 내 방은 처음이지?", ownerNick: "준", cleanedAt: 0, ownerId: null });
+const sampleRoom = () => ({ items: SAMPLE_ITEMS(), wall: "stripe", floor: "wood", bgm: 0, mood: "들뜸", intro: "꾸미느라 3시간 걸림. 건드리면 죽음", title: "어서 와, 내 방은 처음이지?", ownerNick: "준", cleanedAt: 0, ownerId: null, layout: "iso" });
 
 let net = null;
 let me = { id: null, isOwner: false, canWrite: false };
@@ -272,6 +272,34 @@ function moveMovers(dt) {
   }
 }
 
+// a saved position that is off the floor or off its wall (old layouts, other versions) is moved back in
+function normalizeItem(it) {
+  const def = CATALOG[it.type]; if (!def) return it;
+  if (def.layer === "wall") {
+    const hw = def.s.width / 2, x = Math.max(CX - HW + hw + 4, Math.min(CX + HW - hw - 4, it.x)), b = backY(x);
+    return { ...it, x: Math.round(x), y: Math.round(Math.max(b - WALL_H + def.s.height + hw / 2 + 2, Math.min(b - 4 - hw / 2, it.y))) };
+  }
+  const q = clampP(it.x, it.y, def.flat ? 3 : 4);
+  return { ...it, x: Math.round(q.x), y: Math.round(q.y) };
+}
+// rooms saved before the room became isometric: lay the sample pieces out again, keep the rest inside
+function migrateRoom(doc) {
+  if (doc.layout === "iso") return null;
+  const sample = Object.fromEntries(SAMPLE_ITEMS().map((i) => [i.id, i]));
+  const old = (doc.items || []).filter((i) => CATALOG[i.type]);
+  // sample pieces go back to their new spots first, then every other piece takes the emptiest spot left, one by one
+  const placed = old.filter((i) => sample[i.id]?.type === i.type).map((i) => ({ ...i, ...sample[i.id] }));
+  const keep = room;
+  for (const i of old.filter((i) => sample[i.id]?.type !== i.type)) {
+    room = { ...keep, items: placed };
+    const p = freeSpot(i.type);
+    placed.push({ ...i, x: p.x, y: p.y });
+  }
+  room = keep;
+  const order = new Map(old.map((i, n) => [i.id, n]));
+  return { ...doc, items: placed.sort((a, b) => order.get(a.id) - order.get(b.id)), layout: "iso" };
+}
+
 // keep a knocked item in the room: on its wall plane, or on the floor diamond
 function settle(it) {
   const def = CATALOG[it.type], hw = def.s.width / 2;
@@ -294,7 +322,7 @@ const itemBase = (it) => ({ x: it.x + it.dx, y: it.y + it.dy });
 const itemCenter = (it) => ({ x: it.x + it.dx, y: it.y + it.dy - CATALOG[it.type].s.height / 2 });
 function derive() {
   const cleaned = room.cleanedAt || 0;
-  const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...it, dx: 0, dy: 0, rot: 0, flags: {}, fallen: false, dmg: 0, dead: false }));
+  const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...normalizeItem(it), dx: 0, dy: 0, rot: 0, flags: {}, fallen: false, dmg: 0, dead: false }));
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
   const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [], ko: new Set() };
   const all = [...pranks, ...botPranks].filter((p) => p.at > cleaned).sort((a, b) => a.at - b.at);
@@ -1012,11 +1040,29 @@ function saveRoomSoon() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { if (me.isOwner) net?.saveRoom(cleanRoom()).catch(() => toast("방을 저장하지 못했어요.")); }, 500);
 }
+// put a new piece where there is room: the free floor spot (or wall spot) farthest from everything else
+function freeSpot(type) {
+  const def = CATALOG[type], wall = def.layer === "wall", others = (room.items || []).filter((i) => (CATALOG[i.type]?.layer === "wall") === wall);
+  let best = null, bs = -1;
+  for (let x = 30; x <= 290; x += 6) {
+    const cands = wall ? [{ x, y: backY(x) - 22 }] : [];
+    if (!wall) for (let y = backY(x) + 10; y < Math.min(H - 6, frontY(x) - 6); y += 6) cands.push({ x, y });
+    for (const c0 of cands) {
+      const c = wall ? c0 : clampP(c0.x, c0.y, def.flat ? 3 : 4);
+      if (wall && Math.abs(c.x - DOOR.x) < 26) continue;
+      let d = 999;
+      for (const o of others) d = Math.min(d, Math.hypot(o.x - c.x, (o.y - c.y) * 1.6));
+      if (wall) d = Math.min(d, Math.abs(c.x - 48) < 30 ? 0 : 999);   // keep off the window
+      const score = d - Math.abs(c.x - 160) * 0.05;
+      if (score > bs) { bs = score; best = c; }
+    }
+  }
+  return normalizeItem({ type, x: Math.round(best.x), y: Math.round(best.y) });
+}
 function addItem(type) {
-  const def = CATALOG[type];
-  const wx = Math.round(Math.random() < 0.5 ? 80 + Math.random() * 50 : 190 + Math.random() * 50);
-  const it = def.layer === "wall" ? { id: newId(), type, x: wx, y: Math.round(backY(wx) - 20) } : { id: newId(), type, ...(({ x, y }) => ({ x: Math.round(x), y: Math.round(y) }))(clampP(140 + Math.random() * 40, 160)) };
+  const it = { id: newId(), ...freeSpot(type) };
   room.items = [...(room.items || []), it]; selectedId = it.id; derive(); renderDecor(); saveRoomSoon();
+  toast(`${CATALOG[type].name}을(를) 빈자리에 놓았어요. 끌어서 원하는 곳으로 옮기세요.`);
 }
 function removeSelected() { if (!selectedId) return; room.items = room.items.filter((i) => i.id !== selectedId); selectedId = null; derive(); renderDecor(); saveRoomSoon(); }
 function flipSelected() { const it = room.items.find((i) => i.id === selectedId); if (it) { it.flip = !it.flip; derive(); saveRoomSoon(); } }
@@ -1342,7 +1388,11 @@ connect().then((n) => {
   $("resetBtn").hidden = n.mode !== "local";
   n.subscribe({
     room(doc) {
-      if (doc) room = { ...sampleRoom(), ...doc };
+      if (doc) {
+        room = { ...sampleRoom(), ...doc, layout: doc.layout };
+        const fixed = me.isOwner && migrateRoom(room);
+        if (fixed) { room = fixed; n.saveRoom(cleanRoom()).catch(() => {}); }
+      }
       else if (me.isOwner && !roomLoaded && n.mode === "live") { room = { ...sampleRoom(), ownerId: me.id, ownerNick: "" }; n.saveRoom(cleanRoom()).catch(() => {}); }
       roomLoaded = true;
       if (drag) return;
