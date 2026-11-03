@@ -10,44 +10,101 @@ export function sprite(w, h, draw) {
   return c;
 }
 
-// ---------- furniture ----------
+// ---------- isometric furniture ----------
+// Floor items are boxes on a 2:1 isometric grid. u runs along the left wall (screen +1, -0.5), v along the
+// right wall (screen -1, -0.5), z is height. Each sprite's anchor (ax, bottom row) is the footprint's front corner,
+// so depth-sorting by that point's screen y is correct. Faces: top light, left mid, right dark, plus an outline.
+function isoSprite(parts, extra, pad = 0) {
+  let xmin = 0, xmax = 0, ymin = -pad;
+  for (const [u, v, z, a, b, h] of parts) {
+    xmin = Math.min(xmin, u - v - b); xmax = Math.max(xmax, u + a - v);
+    ymin = Math.min(ymin, -(u + a + v + b) / 2 - z - h);
+  }
+  const ax = Math.ceil(-xmin) + 1, W = Math.ceil(xmax - xmin) + 3, H = Math.ceil(-ymin) + 3, ay = H - 1;
+  const c = sprite(W, H, (r, g) => {
+    const P = (u, v, z) => [ax + u - v, ay - (u + v) / 2 - z];
+    for (const [u, v, z, a, b, hh, top, left, right] of parts) {
+      const [fx, fy] = P(u, v, z);
+      for (let x = Math.floor(fx - b); x < Math.ceil(fx + a); x++) {
+        const cx = x + 0.5;
+        if (hh > 0) {
+          const yb = fy - Math.abs(cx - fx) / 2;
+          r(x, Math.round(yb - hh), 1, Math.max(1, Math.round(hh)), cx < fx ? left : right);
+        }
+        const low = fy - hh - Math.abs(cx - fx) / 2;
+        const up = cx <= fx + a - b ? fy - hh - b / 2 - (cx - (fx - b)) / 2 : fy - hh - a / 2 - (fx + a - cx) / 2;
+        r(x, Math.round(up), 1, Math.max(1, Math.round(low - up)), top);
+      }
+    }
+    if (extra) extra(r, P);
+    outline(g, W, H);
+  });
+  c.ax = ax;
+  return c;
+}
+// darken the opaque pixels that touch transparency: a pixel-art outline
+function outline(g, W, H) {
+  const d = g.getImageData(0, 0, W, H), p = d.data, out = new Uint8ClampedArray(p);
+  const A = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : p[(y * W + x) * 4 + 3]);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    if (!p[i + 3]) continue;
+    if (!A(x - 1, y) || !A(x + 1, y) || !A(x, y - 1) || !A(x, y + 1)) { out[i] = p[i] * 0.45; out[i + 1] = p[i + 1] * 0.4; out[i + 2] = p[i + 2] * 0.5; }
+  }
+  d.data.set(out); g.putImageData(d, 0, 0);
+}
+const WOOD = ["#c48a56", "#a86d3e", "#80502c"], TEAL = ["#6cc7bf", "#3fa7a0", "#2c8781"];
+// face columns on a box's right face (u from u0 to u1 at v, z from z0 to z1): for screens and book rows
+function faceR(r, P, u0, u1, v, z0, z1, col) { for (let u = u0; u < u1; u++) { const [x, y] = P(u + 0.5, v, z1); r(Math.round(x - 0.5), Math.round(y), 1, z1 - z0, col); } }
+
 export const CATALOG = {
-  bed: { name: "침대", layer: "floor", price: 0, s: sprite(56, 32, (r) => {
-    r(0, 4, 6, 28, "#7b4b2a"); r(1, 2, 4, 3, "#9a643a"); r(51, 14, 5, 18, "#7b4b2a");
-    r(5, 19, 46, 9, "#a86d3e"); r(5, 26, 46, 2, "#7b4b2a"); r(1, 30, 3, 2, "#4a2c18"); r(52, 30, 3, 2, "#4a2c18");
-    r(5, 14, 46, 6, "#fdf6ee"); r(18, 12, 33, 9, "#f28ab2"); r(18, 12, 33, 2, "#f9b6cf"); r(18, 19, 33, 2, "#d9668f");
-    r(7, 10, 11, 5, "#ffffff"); r(7, 14, 11, 1, "#dcd3e8");
-  }) },
-  sofa: { name: "소파", layer: "floor", s: sprite(50, 28, (r) => {
-    r(4, 2, 42, 14, "#3fa7a0"); r(4, 2, 42, 2, "#6cc7bf"); r(0, 8, 8, 16, "#358f89"); r(42, 8, 8, 16, "#358f89");
-    r(0, 8, 8, 2, "#5bb8b0"); r(42, 8, 8, 2, "#5bb8b0"); r(6, 14, 38, 8, "#4bbab2"); r(24, 14, 2, 8, "#358f89");
-    r(2, 22, 46, 3, "#2a716c"); r(4, 25, 3, 3, "#5a3a22"); r(43, 25, 3, 3, "#5a3a22"); r(30, 5, 9, 8, "#ffd36b"); r(30, 5, 9, 2, "#ffe7a3");
-  }) },
-  tv: { name: "TV", layer: "floor", s: sprite(34, 36, (r) => {
-    r(2, 24, 30, 9, "#6b4a8a"); r(2, 24, 30, 2, "#8e6db0"); r(4, 33, 3, 3, "#4a3260"); r(27, 33, 3, 3, "#4a3260");
-    r(4, 3, 26, 20, "#2b2b3a"); r(6, 5, 22, 14, "#5ec8f2"); r(7, 6, 6, 2, "#bfeeff"); r(14, 21, 6, 3, "#2b2b3a");
-    r(24, 20, 2, 2, "#ff6f91"); r(10, 0, 1, 3, "#555"); r(22, 0, 1, 3, "#555");
-  }), screen: [6, 5, 22, 14] },
-  plant: { name: "화분", layer: "floor", s: sprite(16, 30, (r) => {
-    r(3, 21, 10, 9, "#d0603e"); r(2, 20, 12, 3, "#e57b55"); r(7, 5, 2, 16, "#3d8b3d");
-    r(2, 9, 6, 4, "#56b356"); r(8, 5, 6, 4, "#56b356"); r(1, 14, 6, 4, "#4aa14a"); r(9, 12, 6, 4, "#4aa14a"); r(5, 1, 5, 4, "#6cc96c");
-  }) },
-  lamp: { name: "스탠드", layer: "floor", s: sprite(14, 40, (r) => {
-    r(3, 37, 8, 3, "#4a4458"); r(6, 12, 2, 25, "#6d6680"); r(1, 2, 12, 9, "#ffd36b"); r(0, 10, 14, 2, "#e8b84a"); r(3, 3, 3, 6, "#ffe9a8");
-  }) },
-  rug: { name: "러그", layer: "floor", flat: true, s: sprite(64, 14, (r) => {
-    r(8, 0, 48, 14, "#c97bd6"); r(3, 2, 58, 10, "#c97bd6"); r(0, 4, 64, 6, "#c97bd6");
-    r(12, 3, 40, 8, "#e6a7ee"); r(16, 6, 32, 2, "#c97bd6"); r(30, 4, 4, 6, "#fff2a8");
-  }) },
-  shelf: { name: "책장", layer: "floor", s: sprite(32, 46, (r) => {
-    r(0, 0, 32, 46, "#8b5a33"); r(3, 3, 26, 40, "#5c3a20"); r(3, 16, 26, 2, "#8b5a33"); r(3, 30, 26, 2, "#8b5a33");
+  bed: { name: "침대", layer: "floor", s: isoSprite([
+    [38, 0, 0, 3, 22, 21, ...WOOD],
+    [0, 0, 0, 38, 22, 7, ...WOOD],
+    [1, 1, 7, 37, 20, 3, "#fdf6ee", "#e8dccc", "#d6c8b6"],
+    [0, 0, 9, 24, 22, 2, "#f28ab2", "#d9668f", "#c25480"],
+    [28, 4, 10, 8, 14, 3, "#ffffff", "#e6e0ee", "#d0c8dc"],
+  ], (r, P) => { for (let u = 2; u < 22; u += 5) faceR(r, P, u, u + 2, 0, 9, 11, "#ffc2d1"); }) },
+  sofa: { name: "소파", layer: "floor", s: isoSprite([
+    [0, 12, 0, 34, 4, 19, ...TEAL],
+    [0, 0, 0, 34, 12, 8, "#5bc0b8", TEAL[1], TEAL[2]],
+    [30, 0, 0, 4, 12, 13, ...TEAL],
+    [20, 7, 8, 7, 4, 8, "#ffe7a3", "#ffd36b", "#e8b84a"],
+    [0, 0, 0, 4, 12, 13, ...TEAL],
+  ]) },
+  tv: { name: "TV", layer: "floor", s: isoSprite([
+    [0, 0, 0, 22, 12, 9, "#8e6db0", "#6b4a8a", "#55386f"],
+    [2, 4, 9, 18, 6, 16, "#4a4a5e", "#33334a", "#2b2b3a"],
+  ], (r, P) => { faceR(r, P, 4, 18, 4, 12, 23, "#5ec8f2"); faceR(r, P, 5, 8, 4, 19, 22, "#bfeeff"); }), screen: { u0: 4, u1: 18, v: 4, z0: 12, z1: 23 } },
+  plant: { name: "화분", layer: "floor", s: isoSprite([[0, 0, 0, 9, 9, 9, "#e57b55", "#d0603e", "#a84a2e"]], (r, P) => {
+    const [x, y] = P(4.5, 4.5, 9);
+    const X = Math.round(x), Y = Math.round(y);
+    r(X - 1, Y - 16, 2, 16, "#3d8b3d");
+    r(X - 7, Y - 12, 6, 4, "#56b356"); r(X + 1, Y - 16, 6, 4, "#56b356"); r(X - 8, Y - 7, 6, 4, "#4aa14a"); r(X + 2, Y - 9, 6, 4, "#4aa14a"); r(X - 3, Y - 20, 5, 4, "#6cc96c");
+  }, 16) },
+  lamp: { name: "스탠드", layer: "floor", s: isoSprite([
+    [0, 0, 0, 7, 7, 2, "#8a8498", "#6d6680", "#4a4458"],
+    [-1, -1, 24, 9, 9, 8, "#fff2c0", "#ffd36b", "#e8b84a"],
+  ], (r, P) => { const [x, y] = P(3.5, 3.5, 24); r(Math.round(x) - 1, Math.round(y), 2, 22, "#6d6680"); }) },
+  rug: { name: "러그", layer: "floor", flat: true, s: isoSprite([
+    [0, 0, 0, 46, 30, 1, "#c97bd6", "#a85cb8", "#a85cb8"],
+    [5, 5, 1, 36, 20, 0, "#e6a7ee", "#e6a7ee", "#e6a7ee"],
+    [17, 11, 1, 12, 8, 0, "#fff2a8", "#fff2a8", "#fff2a8"],
+  ]) },
+  shelf: { name: "책장", layer: "floor", s: isoSprite([[0, 0, 0, 26, 11, 42, "#a86d3e", "#8b5a33", "#6e4426"]], (r, P) => {
     const books = ["#ff6f91", "#5cc8b8", "#ffd36b", "#7a6cff", "#f2f0fa", "#56b356"];
-    for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) r(4 + i * 4, 6 + row * 14 + (i % 3), 3, 10 - (i % 3), books[(i + row * 2) % 6]);
+    for (let row = 0; row < 3; row++) {
+      const z0 = 3 + row * 13;
+      faceR(r, P, 2, 24, 0, z0, z0 + 11, "#4a2e18");
+      for (let i = 0; i < 7; i++) faceR(r, P, 3 + i * 3, 5 + i * 3, 0, z0, z0 + 9 - (i % 3), books[(i + row * 2) % 6]);
+    }
   }) },
-  table: { name: "케이크 테이블", layer: "floor", s: sprite(34, 26, (r) => {
-    r(11, 4, 12, 7, "#fff8f0"); r(11, 4, 12, 2, "#f28ab2"); r(16, 0, 2, 4, "#7ec8f0"); r(16, 0, 2, 1, "#ffd36b");
-    r(0, 10, 34, 4, "#c08a52"); r(0, 10, 34, 1, "#dcae7a"); r(3, 14, 3, 12, "#8b5a33"); r(28, 14, 3, 12, "#8b5a33");
-  }) },
+  table: { name: "케이크 테이블", layer: "floor", s: isoSprite([
+    [21, 13, 0, 2, 2, 12, ...WOOD], [1, 13, 0, 2, 2, 12, ...WOOD], [21, 1, 0, 2, 2, 12, ...WOOD], [1, 1, 0, 2, 2, 12, ...WOOD],
+    [0, 0, 12, 24, 16, 3, "#dcae7a", "#c08a52", "#9a6a3a"],
+    [8, 5, 15, 8, 7, 5, "#fff8f0", "#f9e6ea", "#f2d6dc"],
+    [8, 5, 20, 8, 7, 2, "#f9b6cf", "#f28ab2", "#d9668f"],
+  ], (r, P) => { const [x, y] = P(12, 8.5, 22); r(Math.round(x), Math.round(y) - 5, 1, 4, "#7ec8f0"); r(Math.round(x), Math.round(y) - 6, 1, 1, "#ffd36b"); }, 4) },
   bear: { name: "곰인형", layer: "floor", s: sprite(16, 18, (r) => {
     r(2, 0, 3, 3, "#8a5a32"); r(11, 0, 3, 3, "#8a5a32"); r(3, 1, 10, 7, "#b07a4a"); r(4, 7, 8, 8, "#b07a4a");
     r(6, 4, 4, 2, "#e8c9a0"); r(5, 3, 1, 1, "#221a2e"); r(10, 3, 1, 1, "#221a2e"); r(6, 9, 4, 4, "#e8c9a0");

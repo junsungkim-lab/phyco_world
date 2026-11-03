@@ -12,7 +12,7 @@
 //   minimi/<uid>           { look }                              each person writes their own
 //   visits/<uid>__<date>   { by, date, at }                      one per person per day
 
-const LS_KEY = "phyco-world-v2";
+const LS_KEY = "phyco-world-v3";
 
 export async function connect() {
   if (window.claude && typeof window.claude.use === "function") {

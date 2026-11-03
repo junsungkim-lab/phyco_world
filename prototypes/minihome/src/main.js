@@ -25,14 +25,24 @@ import * as doubleSlash from "../vendor/pixelfx/src/fx/melee/double-slash.js";
 import { Bgm, SONGS } from "./bgm.js";
 import { CATALOG, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
 import { connect, newId, today } from "./net.js";
+import { JOBS, KEYS, jobById, skillOf, aimSkill, skillTargets } from "./skills.js";
 
 const $ = (id) => document.getElementById(id);
 
 // ---------- room geometry (native pixels; canvas is scaled up with image-rendering: pixelated) ----------
-const W = 320, H = 200, WALL_BOTTOM = 112;
-const FLOOR = { x0: 10, x1: 310, y0: 124, y1: 198 };
-const WALLR = { x0: 10, x1: 270, y0: 18, y1: 104 };
-const DOOR = { x: 294, y: 132 };
+// An isometric room like the old mini rooms: two walls meeting at a back corner over a diamond floor.
+// The game still works in screen pixels; the floor is the diamond, walls rise from its two back edges.
+const W = 320, H = 200;
+const CX = 160, CY = 66, HW = 150, WALL_H = 60;          // back corner, half width, wall height
+const backY = (x) => CY + Math.abs(x - CX) / 2;           // where floor meets wall
+const frontY = (x) => CY + HW - Math.abs(x - CX) / 2;     // the diamond's front edges
+function clampP(x, y, m = 3) {
+  x = Math.max(CX - HW + m * 4 + 4, Math.min(CX + HW - m * 4 - 4, x));
+  const lo = backY(x) + m, hi = Math.min(H - 2, frontY(x) - m);
+  return { x, y: lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, y)) };
+}
+const wallSide = (x) => (x < CX ? -1 : 1);                // -1 left wall, 1 right wall
+const DOOR = { x: 266, y: backY(266) + 7 };
 const ESCAPE_SECS = 10;
 
 // ---------- what you can do ----------
@@ -70,10 +80,10 @@ const LOG = {
 
 // ---------- state ----------
 const SAMPLE_ITEMS = () => [
-  { id: "i1", type: "rug", x: 150, y: 172 }, { id: "i2", type: "bed", x: 62, y: 150 }, { id: "i3", type: "shelf", x: 120, y: 138 },
-  { id: "i4", type: "lamp", x: 22, y: 150 }, { id: "i5", type: "tv", x: 230, y: 160 }, { id: "i6", type: "plant", x: 268, y: 168 },
-  { id: "i7", type: "table", x: 160, y: 186 }, { id: "i8", type: "bear", x: 92, y: 192 }, { id: "i9", type: "frame", x: 150, y: 66 },
-  { id: "i10", type: "clock", x: 196, y: 52 }, { id: "i11", type: "poster", x: 236, y: 78 },
+  { id: "i1", type: "rug", x: 150, y: 150 }, { id: "i2", type: "bed", x: 64, y: 150 }, { id: "i3", type: "shelf", x: 136, y: 102 },
+  { id: "i4", type: "lamp", x: 42, y: 140 }, { id: "i5", type: "tv", x: 226, y: 132, flip: true }, { id: "i6", type: "plant", x: 278, y: 150 },
+  { id: "i7", type: "table", x: 160, y: 168 }, { id: "i8", type: "bear", x: 196, y: 176 }, { id: "i9", type: "frame", x: 98, y: 80 },
+  { id: "i10", type: "clock", x: 180, y: 58 }, { id: "i11", type: "poster", x: 214, y: 80 }, { id: "i12", type: "sofa", x: 196, y: 112, flip: true },
 ];
 const sampleRoom = () => ({ items: SAMPLE_ITEMS(), wall: "stripe", floor: "wood", bgm: 0, mood: "들뜸", intro: "꾸미느라 3시간 걸림. 건드리면 죽음", title: "어서 와, 내 방은 처음이지?", ownerNick: "준", cleanedAt: 0, ownerId: null });
 
@@ -110,15 +120,45 @@ function background() {
   const key = room.wall + "/" + room.floor;
   if (bgCache.key === key) return bgCache.c;
   const wall = WALLS[room.wall] || WALLS.stripe, floor = FLOORS[room.floor] || FLOORS.wood;
-  const c = sprite(W, H, (r) => {
-    wall.draw(r, W, WALL_BOTTOM);
-    r(28, 22, 58, 50, "#ffffff"); r(31, 25, 52, 44, "#9fd8ff"); r(56, 25, 2, 44, "#ffffff"); r(31, 46, 52, 2, "#ffffff");
-    r(36, 30, 12, 4, "#ffffff"); r(40, 28, 8, 2, "#ffffff"); r(64, 52, 14, 4, "#eaf7ff"); r(70, 30, 6, 6, "#ffe48a");
-    r(22, 18, 70, 4, "#c97bd6"); r(22, 22, 8, 54, "#e6a7ee"); r(84, 22, 8, 54, "#e6a7ee");
-    r(280, 44, 30, WALL_BOTTOM - 44, "#8b5a33"); r(283, 47, 24, WALL_BOTTOM - 47, "#a86d3e"); r(286, 52, 18, 22, "#9a643a"); r(286, 80, 18, 26, "#9a643a"); r(302, 78, 3, 3, "#ffd36b");
-    r(0, WALL_BOTTOM - 2, W, 4, "#c49a76");
-    floor.draw(r, W, WALL_BOTTOM + 2, H);
-  });
+  const wallTex = sprite(HW, WALL_H, (r) => wall.draw(r, HW, WALL_H));
+  const floorTex = sprite(HW, HW, (r) => floor.draw(r, HW, 0, HW));
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  g.fillStyle = "#e9eef8"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#dde4f2"; for (let y = 0; y < H; y += 8) for (let x = (y / 8) % 2 * 4; x < W; x += 8) g.fillRect(x, y, 1, 1);
+  // floor slab edge (the room floats like a little diorama)
+  g.fillStyle = "#b98d63";
+  for (let x = CX - HW; x < CX + HW; x++) g.fillRect(x, Math.round(frontY(x + 0.5)), 1, 6);
+  // floor: the texture mapped onto the diamond
+  g.setTransform(1, 0.5, -1, 0.5, CX, CY); g.drawImage(floorTex, 0, 0); g.setTransform(1, 0, 0, 1, 0, 0);
+  // walls: the wallpaper sheared onto each plane
+  g.setTransform(1, -0.5, 0, 1, CX - HW, CY + HW / 2 - WALL_H); g.drawImage(wallTex, 0, 0);
+  g.setTransform(1, 0.5, 0, 1, CX, CY - WALL_H); g.drawImage(wallTex, 0, 0);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // the left wall is a little darker than the right, like light from a window
+  g.fillStyle = "rgba(60,40,90,0.08)";
+  for (let x = CX - HW; x < CX; x++) g.fillRect(x, Math.round(backY(x + 0.5) - WALL_H), 1, WALL_H);
+  const col = (x, y0, h, c) => { g.fillStyle = c; g.fillRect(x, Math.round(y0), 1, Math.round(h)); };
+  // window on the left wall
+  for (let x = 26; x < 72; x++) {
+    const b = backY(x + 0.5) - 14, inner = x > 28 && x < 69;
+    col(x, b - 34, 34, "#ffffff");
+    if (inner) col(x, b - 31, 28, x === 48 || x === 49 ? "#ffffff" : "#9fd8ff");
+    if (inner && x > 32 && x < 42) col(x, b - 27, 3, "#ffffff");
+    if (x === 26 || x === 71) col(x, b - 38, 42, "#c97bd6");
+    col(x, b - 37, 3, "#c97bd6");
+  }
+  for (let x = 29; x < 69; x++) col(x, backY(x + 0.5) - 14 - 17, 1, "#ffffff");
+  // door on the right wall
+  for (let x = DOOR.x - 12; x < DOOR.x + 12; x++) {
+    const b = backY(x + 0.5);
+    col(x, b - 44, 44, x < DOOR.x - 10 || x > DOOR.x + 9 ? "#6e4426" : "#a86d3e");
+    if (x > DOOR.x - 8 && x < DOOR.x + 7) { col(x, b - 40, 16, "#9a643a"); col(x, b - 20, 15, "#9a643a"); }
+    if (x === DOOR.x + 5 || x === DOOR.x + 6) col(x, b - 23, 2, "#ffd36b");
+  }
+  // trims: baseboards, the corner, the top edge
+  for (let x = CX - HW; x < CX + HW; x++) { const b = backY(x + 0.5); col(x, b - 3, 3, "#c49a76"); col(x, b - WALL_H, 2, "#ffffff"); }
+  col(CX, CY - WALL_H, WALL_H, "rgba(80,60,110,0.25)");
   bgCache = { key, c };
   return c;
 }
@@ -137,7 +177,99 @@ let shake = 0;
 // ---------- derived room: the layout plus every prank since the last clean-up ----------
 let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [] };
 const RNG = (p) => mulberry(p.seed || hashStr(p.id));
-function clampF(v, axis) { return axis === "x" ? Math.max(FLOOR.x0 + 6, Math.min(FLOOR.x1 - 6, v)) : Math.max(FLOOR.y0 + 4, Math.min(FLOOR.y1 - 1, v)); }
+const isWallItem = (it) => CATALOG[it.type].layer === "wall" && !it.fallen;
+const anchorX = (def) => def.s.ax ?? def.s.width / 2;
+// ---------- skills (Q W E R) ----------
+function skillDelay(p) {
+  const s = skillOf(p.sk).skill;
+  return s.shape === "proj" ? Math.abs(p.x - p.ox) / s.speed : s.delay || 0;
+}
+function knockIt(it, amt, r) {
+  it.dx += Math.round((r() - 0.5) * 26 * amt); it.rot = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 1.1) * amt;
+  if (!isWallItem(it)) it.dy += Math.round((r() - 0.5) * 6);
+}
+function applySkill(p, items, out, r, trash) {
+  const s = skillOf(p.sk).skill;
+  for (const it of skillTargets(p, s, items, itemBase, isWallItem)) {
+    const f = it.flags;
+    switch (s.el) {
+      case "fire": f.sooty = 1; break;
+      case "ice": f.frozen = 1; break;
+      case "bolt": f.broken = 1; f.sooty = 1; break;
+      case "slash": f.slashed = 1; knockIt(it, 0.3, r); break;
+      case "nature": f.wilted = 1; it.rot = it.rot || 0.2; break;
+      case "shadow": f.cursed = 1; break;
+      case "boom": f.broken = 1; f.sooty = 1; knockIt(it, 0.8, r); trash(2, ["paper", "book", "can"], it.x, it.y); break;
+      case "wind": knockIt(it, 1.4, r); trash(2, ["paper", "sock", "peel"], it.x, it.y); break;
+      case "haunt": out.ghosts.push({ key: p.id + it.id, item: it.id }); f.cursed = 1; break;
+      case "pull": if (!isWallItem(it)) { const b = itemBase(it); it.dx += Math.round((p.x - b.x) * 0.4); it.dy += Math.round((p.y - b.y) * 0.4); it.rot = (r() - 0.5) * 1.2; } f.cursed = 1; break;
+      case "nuke":
+        f.broken = 1; f.sooty = 1;
+        if (isWallItem(it)) { it.fallen = true; it.dy = 0; it.y = clampP(it.x, backY(it.x) + 8 + Math.floor(r() * 18)).y; }
+        knockIt(it, 1.3, r); break;
+    }
+    settle(it);
+  }
+  if (s.leave === "fire") out.fires.push({ key: p.id, x: p.x, y: p.y, at: p.at + skillDelay(p) * 1000 });
+  if (s.el === "party") trash(8, ["paper", "peel", "cake"], p.ox, p.oy, 70);
+  if (s.el === "nuke") trash(24, ["paper", "book", "can", "sock", "peel"], 160, 150, 220);
+}
+const movers = [];   // effects that travel: projectiles, a walking tornado
+function playSkill(p) {
+  const { skill: s } = skillOf(p.sk), flip = p.dir < 0, d = skillDelay(p);
+  const o = { flip, ...(s.o || {}) };
+  const stopAfter = (fx, secs) => later(secs, () => fx.stop());
+  switch (s.shape) {
+    case "proj": {
+      const fx = spawn(s.fx, p.ox + p.dir * 6, p.oy - 10, o);
+      movers.push({ fx, vx: p.dir * s.speed, left: d, end: () => { fx.stop(); spawn(s.hit, p.x, p.y - 4, s.hitO || {}); shake = Math.max(shake, 0.2); } });
+      break;
+    }
+    case "beam": stopAfter(spawn(s.fx, p.ox + p.dir * 6, p.oy - 10, o), s.dur); break;
+    case "line": for (let k = 0; k < (s.repeat || 1); k++) later(k * 0.3, () => spawn(s.fx, p.ox, p.oy, o)); break;
+    case "self": case "chain": spawn(s.fx, p.ox, p.oy, o); break;
+    case "at": {
+      const fx = s.atCaster ? spawn(s.fx, p.ox, p.oy, o) : spawn(s.fx, p.x, p.y, o);
+      if (s.dur) stopAfter(fx, s.dur);
+      if (s.move) movers.push({ fx, vx: p.dir * s.move, left: s.dur });
+      break;
+    }
+    case "near": {
+      const t = skillTargets(p, s, D.items, itemBase, isWallItem)[0];
+      const b = t ? itemBase(t) : { x: p.ox + p.dir * 30, y: p.oy };
+      spawn(s.fx, b.x, b.y, {});
+      break;
+    }
+    case "all": spawn(s.fx, 160, 196, {}); break;
+  }
+  if (s.shake) later(d, () => (shake = s.shake));
+  later(d + 0.05, derive);
+}
+function moveMovers(dt) {
+  for (const m of [...movers]) {
+    m.left -= dt; m.fx.options.x += m.vx * dt;
+    if (m.left <= 0) { movers.splice(movers.indexOf(m), 1); m.end?.(); }
+  }
+}
+
+// keep a knocked item in the room: on its wall plane, or on the floor diamond
+function settle(it) {
+  const def = CATALOG[it.type], hw = def.s.width / 2;
+  if (isWallItem(it)) {
+    const nx = Math.max(CX - HW + hw + 4, Math.min(CX + HW - hw - 4, it.x + it.dx));
+    it.dx = nx - it.x; it.dy = backY(nx) - backY(it.x);
+  } else {
+    const p = clampP(it.x + it.dx, it.y + it.dy, def.flat ? 3 : 4);
+    it.dx = p.x - it.x; it.dy = p.y - it.y;
+  }
+}
+// screen box of an item, with its flip and, on a wall, the shear
+function bbox(it) {
+  const def = CATALOG[it.type], s = def.s, b = itemBase(it), ax = anchorX(def);
+  const l = it.flip ? s.width - ax : ax, x0 = b.x - l, x1 = x0 + s.width;
+  const sh = isWallItem(it) ? s.width / 4 : 0;
+  return { x0, x1, y0: b.y - s.height - sh, y1: b.y + sh };
+}
 const itemBase = (it) => ({ x: it.x + it.dx, y: it.y + it.dy });
 const itemCenter = (it) => ({ x: it.x + it.dx, y: it.y + it.dy - CATALOG[it.type].s.height / 2 });
 function derive() {
@@ -149,14 +281,15 @@ function derive() {
   for (const p of all) {
     const r = RNG(p);
     const it = p.item ? byId[p.item] : null;
-    const trash = (n, kinds, x, y, spread = 50) => { for (let k = 0; k < n; k++) out.trash.push({ x: clampF(x + (r() - 0.5) * spread, "x"), y: clampF(y + (r() - 0.5) * 22, "y"), kind: kinds[Math.floor(r() * kinds.length)] }); };
+    const trash = (n, kinds, x, y, spread = 50) => { for (let k = 0; k < n; k++) out.trash.push({ ...clampP(x + (r() - 0.5) * spread, y + (r() - 0.5) * 22), kind: kinds[Math.floor(r() * kinds.length)] }); };
+    if (p.kind === "skill") { if (Date.now() >= p.at + skillDelay(p) * 1000) applySkill(p, items, out, r, trash); continue; }
     if (it) {
       const def = CATALOG[it.type];
       const knock = (amt = 1) => { it.dx += Math.round((r() - 0.5) * 26 * amt); it.rot = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 1.1) * amt; if (def.layer !== "wall") it.dy += Math.round((r() - 0.5) * 6); };
       switch (p.kind) {
         case "kick": knock(); trash(2, ["paper", "sock", "can"], it.x, it.y); break;
         case "jump": it.flags.broken = 1; it.rot = (r() - 0.5) * 0.3; trash(3, ["paper", "sock"], it.x, it.y); break;
-        case "burn": out.fires.push({ key: p.id, x: it.x + it.dx, y: Math.min(FLOOR.y1, it.y + it.dy + 1), at: p.at, small: true }); break;
+        case "burn": out.fires.push({ key: p.id, x: it.x + it.dx, y: clampP(it.x + it.dx, it.y + it.dy + 1).y, at: p.at, small: true }); break;
         case "slash": case "cut": it.flags.slashed = 1; break;
         case "zap": case "shock": it.flags.broken = 1; it.flags.sooty = 1; break;
         case "freeze": it.flags.frozen = 1; break;
@@ -166,10 +299,9 @@ function derive() {
         case "haunt": out.ghosts.push({ key: p.id, item: it.id }); break;
         case "water": it.flags.wet = 1; out.puddles.push({ key: p.id, item: it.id }); break;
         case "doodle": it.flags.doodle = (it.flags.doodle || 0) + 1; it.doodleSeed = p.seed; break;
-        case "drop": if (def.layer === "wall") { it.fallen = true; it.dy = 0; it.y = FLOOR.y0 + 8 + Math.floor(r() * 18); it.rot = (r() - 0.5) * 1.2; } else knock(); break;
+        case "drop": if (def.layer === "wall") { it.fallen = true; it.dy = 0; it.y = clampP(it.x, backY(it.x) + 8 + Math.floor(r() * 18)).y; it.rot = (r() - 0.5) * 1.2; } else knock(); break;
       }
-      const R = def.layer === "wall" && !it.fallen ? WALLR : FLOOR, hw = def.s.width / 2;
-      it.dx = Math.max(R.x0 + hw - it.x, Math.min(R.x1 - hw - it.x, it.dx));
+      settle(it);
     } else {
       switch (p.kind) {
         case "poop": out.poops.push({ x: p.x, y: p.y + 3 }); break;
@@ -200,8 +332,8 @@ function placePersistent(now) {
   for (const c of D.critters) {
     const fx = persist.get("c" + c.key); if (!fx) continue;
     const r = mulberry(c.seed), a = r() * 6.28, sp = 0.15 + r() * 0.15, t = now * sp + a;
-    fx.options.x = Math.round(clampF(c.x + Math.sin(t) * 70 + Math.sin(t * 2.3) * 20, "x"));
-    fx.options.y = Math.round(clampF(c.y + Math.cos(t * 1.4) * 22, "y"));
+    const q = clampP(c.x + Math.sin(t) * 70 + Math.sin(t * 2.3) * 20, c.y + Math.cos(t * 1.4) * 22, 6);
+    fx.options.x = Math.round(q.x); fx.options.y = Math.round(q.y);
     fx.options.flip = Math.cos(t) < 0;
   }
 }
@@ -210,6 +342,7 @@ function placePersistent(now) {
 function playPrank(p) {
   if (played.has(p.id)) return;
   played.add(p.id);
+  if (p.kind === "skill") { playSkill(p); return; }
   const it = p.item ? D.items.find((i) => i.id === p.item) : null;
   const b = it ? itemBase(it) : { x: p.x, y: p.y };
   const h = it ? CATALOG[it.type].s.height : 20;
@@ -249,11 +382,23 @@ let pendingItem = null;  // walking up to this item to open its menu
 let say = { text: "", until: 0 };
 function speak(text, secs = 1.4) { say = { text, until: Date.now() + secs * 1000 }; pushPresence(true); }
 
+let myJob = JOBS[0].id;
+const cooldown = { q: 0, w: 0, e: 0, r: 0 };   // ready at (ms)
+function rollJob() {
+  const pool = JOBS.filter((j) => j.id !== myJob);
+  myJob = pool[Math.floor(Math.random() * pool.length)].id;
+  for (const k of KEYS) cooldown[k] = 0;
+  const j = jobById(myJob);
+  spawn(poof, actor.x, actor.y - 6, { palette: ["#3a2a70", "#7a6cff", "#c7b8f5", "#ffffff"] });
+  toast(`전직! 이번 방문에는 ${j.ico} ${j.name}. Q W E R로 스킬을 써 보세요.`);
+  renderSkills(); pushPresence(true);
+}
 function enterRoom() {
   actor.on = true; actor.x = DOOR.x; actor.y = DOOR.y; actor.dir = -1; actor.st = "idle"; actor.t = 0;
   heat = null; done = []; moveTarget = null; pendingItem = null; keys.clear(); closeMenu();
   spawn(poof, DOOR.x, DOOR.y + 4);
   speak(role === "owner" ? "다녀왔습니다~" : "실례합니다~");
+  later(0.6, rollJob);
   if (role === "visitor") net?.logVisit().catch(() => {});
   renderControls();
 }
@@ -276,17 +421,17 @@ function moveActor(dt) {
   const speed = heat ? 110 : 92;
   actor.st = heat ? "run" : "walk";
   if (vx) actor.dir = vx < 0 ? -1 : 1;
-  actor.x = clampF(actor.x + (vx / len) * speed * dt, "x");
-  actor.y = clampF(actor.y + (vy / len) * speed * dt, "y");
+  const q = clampP(actor.x + (vx / len) * speed * dt, actor.y + (vy / len) * speed * dt);
+  actor.x = q.x; actor.y = q.y;
   if (heat && nearDoor()) finishVisit(false);
 }
 function approach(it) {
   const def = CATALOG[it.type], b = itemBase(it);
   const wall = def.layer === "wall" && !it.fallen;
+  if (wall) return clampP(b.x, backY(b.x) + 6);
+  if (def.flat) return clampP(b.x, b.y - 6);
   const side = actor.x < b.x ? -1 : 1;
-  const x = wall ? b.x : b.x + side * (def.s.width / 2 + 5);
-  const y = wall ? FLOOR.y0 + 6 : (def.flat ? b.y - 4 : b.y + 2);
-  return { x: clampF(x, "x"), y: clampF(y, "y") };
+  return clampP(b.x + side * 12, b.y + 4);
 }
 const wait = (s) => new Promise((res) => setTimeout(res, s * 1000));
 
@@ -297,7 +442,7 @@ async function doAction(kind, it) {
   actor.st = "windup"; actor.t = 0;
   speak(it ? ["으랴!", "흐흐흐", "간다~"][Math.floor(Math.random() * 3)] : kind === "poop" ? "끄응..." : kind === "fart" ? "뿌웅~" : "흐흐", 1);
   await wait(kind === "poop" ? 1.2 : 0.45);
-  const p = { id: newId(), kind, item: it ? it.id : null, x: Math.round(clampF(actor.x + (kind === "fire" ? actor.dir * 14 : 0), "x")), y: Math.round(actor.y), by: me.id, nick: myNick(), at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
+  const p = { id: newId(), kind, item: it ? it.id : null, x: Math.round(clampP(actor.x + (kind === "fire" ? actor.dir * 14 : 0), actor.y).x), y: Math.round(actor.y), by: me.id, nick: myNick(), at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
   pranks.push(p); derive(); playPrank(p);
   net.addPrank(p).catch(() => toast("장난을 저장하지 못했어요. 권한을 확인해 주세요."));
   done.push(it ? LOG[kind](CATALOG[it.type].name) : LOG[kind]());
@@ -305,6 +450,53 @@ async function doAction(kind, it) {
   actor.st = "idle"; busy = false;
   if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
   renderControls();
+}
+
+async function castSkill(i) {
+  if (!actor.on || busy || !net) return;
+  const key = KEYS[i], job = jobById(myJob), s = job.skills[i];
+  if (Date.now() < cooldown[key]) { toast(`${s.name} 쿨타임 ${((cooldown[key] - Date.now()) / 1000).toFixed(1)}초`); return; }
+  if (!me.canWrite) { toast("스킬을 쓰려면 홈피 주인이 공유 메뉴에서 '참여자(Contributor)' 이상으로 초대해야 해요."); return; }
+  cooldown[key] = Date.now() + s.cd * 1000;
+  busy = true; closeMenu(); moveTarget = null; renderControls();
+  actor.st = "windup"; actor.t = 0;
+  speak(s.name + "!", 1);
+  await wait(0.25);
+  const ox = Math.round(actor.x), oy = Math.round(actor.y), dir = actor.dir;
+  const aim = aimSkill(s, ox, oy, dir, clampP, D.items, itemBase, isWallItem);
+  const p = { id: newId(), kind: "skill", sk: `${job.id}.${key}`, item: null, ox, oy, dir, x: Math.round(aim.x), y: Math.round(aim.y), by: me.id, nick: myNick(), at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
+  pranks.push(p); derive(); playPrank(p);
+  net.addPrank(p).catch(() => toast("스킬을 저장하지 못했어요. 권한을 확인해 주세요."));
+  done.push(`${job.name}의 ${s.name}을(를) 썼어요`);
+  await wait(0.15);
+  actor.st = "idle"; busy = false;
+  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+  renderControls();
+}
+function renderSkills() {
+  const j = jobById(myJob);
+  $("jobName").textContent = `${j.ico} ${j.name}`;
+  const box = $("skillBar"); box.replaceChildren();
+  j.skills.forEach((s, i) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "skill"; b.dataset.skill = KEYS[i];
+    const k = document.createElement("kbd"); k.textContent = KEYS[i].toUpperCase();
+    const n = document.createElement("b"); n.textContent = s.name;
+    const c = document.createElement("small"); c.textContent = `${s.cd}초`;
+    const ov = document.createElement("i"); ov.className = "cd";
+    b.append(k, n, c, ov);
+    b.addEventListener("click", () => castSkill(i));
+    box.append(b);
+  });
+  renderCooldowns();
+}
+function renderCooldowns() {
+  const j = jobById(myJob), now = Date.now();
+  document.querySelectorAll("#skillBar .skill").forEach((b, i) => {
+    const left = Math.max(0, cooldown[KEYS[i]] - now), frac = left / (j.skills[i].cd * 1000);
+    b.style.setProperty("--cd", frac.toFixed(3));
+    b.disabled = !actor.on || busy;
+    b.classList.toggle("cooling", left > 0);
+  });
 }
 
 function finishVisit(caught) {
@@ -318,6 +510,8 @@ function finishVisit(caught) {
   else { spawn(poof, DOOR.x, DOOR.y + 4); toast("도망 성공! 방명록에 기록이 남았어요."); leaveRoom(); }
 }
 
+function randomFloor() { const x = 50 + Math.random() * 220; return clampP(x, backY(x) + 6 + Math.random() * (Math.min(H - 4, frontY(x)) - backY(x) - 12), 6); }
+
 // ---------- friend bots (this browser only): what several people wrecking at once looks like ----------
 const bots = [];
 const BOT_NAMES = ["봇 민지", "봇 동훈", "봇 서연", "봇 태호"];
@@ -325,7 +519,7 @@ let botN = 0;
 function addBots(n = 2) {
   for (let i = 0; i < n; i++) {
     const k = botN++;
-    bots.push({ key: "bot" + k, nick: BOT_NAMES[k % 4], look: randomLook(1000 + k * 77 + (Date.now() % 1000)), x: DOOR.x, y: DOOR.y, dir: -1, st: "walk", t: 0, wait: 0.5 + i * 1.2, say: "", sayUntil: 0, left: 3 + Math.floor(Math.random() * 3), target: null });
+    bots.push({ key: "bot" + k, job: JOBS[Math.floor(Math.random() * JOBS.length)].id, nick: BOT_NAMES[k % 4], look: randomLook(1000 + k * 77 + (Date.now() % 1000)), x: DOOR.x, y: DOOR.y, dir: -1, st: "walk", t: 0, wait: 0.5 + i * 1.2, say: "", sayUntil: 0, left: 3 + Math.floor(Math.random() * 3), target: null });
   }
   toast("친구 봇 2명이 들어왔어요. 이 브라우저에서만 보이는 체험용이에요.");
 }
@@ -335,14 +529,24 @@ function botTick(dt) {
     if (b.wait > 0) { b.wait -= dt; continue; }
     if (!b.target) {
       if (b.left <= 0) { b.target = { x: DOOR.x, y: DOOR.y, exit: true }; b.st = "run"; }
+      else if (Math.random() < 0.4) {
+        // cast a skill (not the big R) where it stands
+        const job = jobById(b.job), i = Math.floor(Math.random() * 3), s = job.skills[i];
+        b.dir = b.x > 160 ? -1 : 1;
+        const aim = aimSkill(s, Math.round(b.x), Math.round(b.y), b.dir, clampP, D.items, itemBase, isWallItem);
+        const p = { id: "b" + newId(), kind: "skill", sk: `${job.id}.${KEYS[i]}`, item: null, ox: Math.round(b.x), oy: Math.round(b.y), dir: b.dir, x: Math.round(aim.x), y: Math.round(aim.y), by: null, nick: b.nick, at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
+        b.st = "windup"; b.t = 0; b.wait = 1.2; b.say = s.name + "!"; b.sayUntil = Date.now() + 1200;
+        later(0.25, () => { b.st = "idle"; botPranks.push(p); derive(); playPrank(p); });
+        b.left--; continue;
+      }
       else if (Math.random() < 0.7 && D.items.length) {
         const it = D.items[Math.floor(Math.random() * D.items.length)];
         const acts = BY_TYPE[it.type] || ["kick"];
         const def = CATALOG[it.type], bb = itemBase(it), wall = def.layer === "wall" && !it.fallen;
-        b.target = { x: clampF(wall ? bb.x : bb.x + 14, "x"), y: clampF(wall ? FLOOR.y0 + 6 : bb.y + 2, "y"), item: it.id, kind: acts[Math.floor(Math.random() * acts.length)] };
+        b.target = { ...(wall ? clampP(bb.x, backY(bb.x) + 6) : clampP(bb.x + 12, bb.y + 4)), item: it.id, kind: acts[Math.floor(Math.random() * acts.length)] };
         b.st = "walk";
       } else {
-        b.target = { x: clampF(30 + Math.random() * 250, "x"), y: clampF(FLOOR.y0 + 8 + Math.random() * 60, "y"), kind: FREE[Math.floor(Math.random() * FREE.length)].kind };
+        b.target = { ...randomFloor(), kind: FREE[Math.floor(Math.random() * FREE.length)].kind };
         b.st = "walk";
       }
     }
@@ -379,22 +583,24 @@ function drawItem(it) {
     if (f.wet) tint("rgba(60,120,200,0.25)");
     if (f.frozen) { tint("rgba(150,215,255,0.55)"); tmpCtx.fillStyle = "rgba(255,255,255,0.85)"; for (let x = 1; x < s.width; x += 4) tmpCtx.fillRect(x, 0, 1, 2 + (x % 3)); }
     if (f.sooty) tint("rgba(30,24,30,0.35)");
+    if (f.cursed) tint("rgba(90,40,140,0.35)");
     if (charred > 0.01) tint(`rgba(28,18,16,${Math.min(0.88, charred * 0.88)})`);
     const r = mulberry(hashStr(it.id) + (it.doodleSeed || 0));
     if (f.slashed) { tmpCtx.fillStyle = "#fffaf3"; for (let k = 0; k < 3; k++) { const x0 = Math.floor(r() * s.width * 0.6), y0 = Math.floor(r() * s.height * 0.5); for (let j = 0; j < Math.min(s.width, s.height) * 0.6; j++) tmpCtx.fillRect(x0 + j, y0 + j, 1, 1); } }
     if (f.broken) { tmpCtx.fillStyle = "#2d2540"; let x = Math.floor(s.width * (0.3 + r() * 0.4)), y = 0; while (y < s.height) { tmpCtx.fillRect(x, y, 1, 2); y += 2; x += r() < 0.5 ? -1 : 1; } }
     if (f.doodle) { const cols = ["#e2504e", "#3a8bd8", "#2d2540", "#56b356"]; for (let k = 0; k < 2 + f.doodle; k++) { tmpCtx.fillStyle = cols[k % 4]; let x = r() * s.width, y = r() * s.height; for (let j = 0; j < 14; j++) { tmpCtx.fillRect(Math.round(x), Math.round(y), 1, 1); x += Math.cos(j * 0.9 + k) * 1.4; y += Math.sin(j * 1.3 + k) * 1.1; } } }
-    if (it.type === "tv" && f.broken) { const [sx, sy, sw, sh] = def.screen; for (let yy = 0; yy < sh; yy++) for (let xx = 0; xx < sw; xx += 2) { tmpCtx.fillStyle = Math.random() < 0.5 ? "#d9d9e6" : "#55556a"; tmpCtx.fillRect(sx + xx, sy + yy, 2, 1); } }
+    if (it.type === "tv" && f.broken) { const sc = def.screen, ax = s.ax, ay = s.height - 1; for (let u = sc.u0; u < sc.u1; u++) { const x = Math.round(ax + u + 0.5 - sc.v - 0.5), y0 = Math.round(ay - (u + 0.5 + sc.v) / 2 - sc.z1); for (let yy = 0; yy < sc.z1 - sc.z0; yy++) { tmpCtx.fillStyle = Math.random() < 0.5 ? "#d9d9e6" : "#55556a"; tmpCtx.fillRect(x, y0 + yy, 1, 1); } } }
     src = tmp;
   }
   const b = itemBase(it);
   ctx.save();
   ctx.translate(Math.round(b.x), Math.round(b.y));
+  if (isWallItem(it)) ctx.transform(1, wallSide(b.x) * 0.5, 0, 1, 0, 0);   // lie flat on the wall plane
   if (it.rot) ctx.rotate(it.rot);
   if (it.flip) ctx.scale(-1, 1);
-  ctx.drawImage(src, -Math.round(s.width / 2), -s.height);
+  ctx.drawImage(src, -Math.round(anchorX(def)), -s.height);
   ctx.restore();
-  const outline = (col, dash) => { ctx.strokeStyle = col; ctx.setLineDash(dash ? [2, 2] : []); ctx.lineWidth = 1; ctx.strokeRect(Math.round(b.x - s.width / 2) - 1.5, Math.round(b.y - s.height) - 1.5, s.width + 3, s.height + 3); ctx.setLineDash([]); };
+  const outline = (col, dash) => { const q = bbox(it); ctx.strokeStyle = col; ctx.setLineDash(dash ? [2, 2] : []); ctx.lineWidth = 1; ctx.strokeRect(Math.round(q.x0) - 1.5, Math.round(q.y0) - 1.5, Math.round(q.x1 - q.x0) + 3, Math.round(q.y1 - q.y0) + 3); ctx.setLineDash([]); };
   if (decorating && it.id === selectedId) outline("#ff6f91", true);
   if (!decorating && hoverItem === it.id && actor.on) outline("rgba(255,211,107,0.95)", false);
 }
@@ -415,7 +621,7 @@ function visiblePeers() { return peers.filter((p) => p.inRoom && typeof p.x === 
 function render(now) {
   ctx.drawImage(background(), 0, 0);
   for (const f of D.fires) { ctx.fillStyle = "rgba(40,24,20,0.3)"; ctx.fillRect(f.x - 20, f.y - 3, 40, 6); }
-  const isWall = (it) => CATALOG[it.type].layer === "wall" && !it.fallen;
+  const isWall = isWallItem;
   for (const it of D.items) if (isWall(it)) drawItem(it);
   for (const it of D.items) if (CATALOG[it.type].flat) drawItem(it);
   const list = [];
@@ -431,7 +637,7 @@ function render(now) {
   composite(frame, img.data, null);
   fxCtx.putImageData(img, 0, 0);
   ctx.drawImage(fxCanvas, 0, 0);
-  if (heat && actor.on && Math.floor(now * 4) % 2) { ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 2; ctx.strokeRect(279, 43, 32, WALL_BOTTOM - 42); }
+  if (heat && actor.on && Math.floor(now * 4) % 2) { ctx.fillStyle = "#ffd36b"; for (let x = DOOR.x - 14; x < DOOR.x + 14; x++) { const b = backY(x + 0.5); if (x < DOOR.x - 12 || x > DOOR.x + 11) ctx.fillRect(x, Math.round(b - 47), 1, 47); else { ctx.fillRect(x, Math.round(b - 47), 1, 2); } } }
   if (moveTarget && actor.on) { ctx.fillStyle = "rgba(255,111,145,0.7)"; ctx.fillRect(Math.round(moveTarget.x) - 2, Math.round(moveTarget.y) - 1, 5, 2); }
   canvas.style.transform = shake > 0 ? `translate(${(Math.random() - 0.5) * 6}px, ${(Math.random() - 0.5) * 4}px)` : "";
 }
@@ -444,9 +650,9 @@ function myNick() { return (me.id && names[me.id]) || $("nick").value.trim() || 
 function renderLabels() {
   const want = [];
   const nowMs = Date.now();
-  if (actor.on) want.push({ key: "me", x: actor.x, y: actor.y, name: myNick() + " (나)", say: say.until > nowMs ? say.text : "", me: true });
-  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) want.push({ key: p.key, x: pp.x, y: pp.y, name: peerName(p), say: p.sayUntil > nowMs ? p.say : "", owner: isHostPeer(p) }); }
-  for (const b of bots) want.push({ key: b.key, x: b.x, y: b.y, name: b.nick, say: b.sayUntil > nowMs ? b.say : "" });
+  if (actor.on) want.push({ key: "me", x: actor.x, y: actor.y, name: `${jobById(myJob).ico} ${myNick()} (나)`, say: say.until > nowMs ? say.text : "", me: true });
+  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) want.push({ key: p.key, x: pp.x, y: pp.y, name: (p.job ? jobById(p.job).ico + " " : "") + peerName(p), say: p.sayUntil > nowMs ? p.say : "", owner: isHostPeer(p) }); }
+  for (const b of bots) want.push({ key: b.key, x: b.x, y: b.y, name: `${jobById(b.job).ico} ${b.nick}`, say: b.sayUntil > nowMs ? b.say : "" });
   const seen = new Set();
   for (const w of want) {
     seen.add(w.key);
@@ -486,8 +692,10 @@ function tick(nowMs) {
   }
   botTick(dt);
   placePersistent(now);
+  moveMovers(dt);
   for (const fx of fxList) fx.update(dt);
   fxList = fxList.filter((fx) => !fx.done());
+  renderCooldowns();
   if (shake > 0) shake -= dt;
   presTimer += dt;
   if (presTimer > 0.1) { presTimer = 0; pushPresence(); }
@@ -501,7 +709,7 @@ let lastPres = "";
 function isHostPeer(p) { return !!(room.ownerId && p.by === room.ownerId && p.host); }
 function pushPresence(force) {
   if (!net) return;
-  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner };
+  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on ? myJob : null };
   const s = JSON.stringify(p);
   if (s !== lastPres || force) { lastPres = s; net.presence(p); }
 }
@@ -517,7 +725,7 @@ function hit(p) {
     const l = (i) => (CATALOG[i.type].layer === "wall" && !i.fallen ? 0 : CATALOG[i.type].flat ? 1 : 2);
     return l(a) - l(b) || itemBase(a).y - itemBase(b).y;
   }).reverse();
-  return order.find((it) => { const s = CATALOG[it.type].s, b = itemBase(it); return p.x >= b.x - s.width / 2 - 2 && p.x <= b.x + s.width / 2 + 2 && p.y >= b.y - s.height - 2 && p.y <= b.y + 2; });
+  return order.find((it) => { const q = bbox(it); return p.x >= q.x0 - 2 && p.x <= q.x1 + 2 && p.y >= q.y0 - 2 && p.y <= q.y1 + 2; });
 }
 canvas.addEventListener("pointerdown", (e) => {
   const p = toCanvas(e);
@@ -533,21 +741,28 @@ canvas.addEventListener("pointerdown", (e) => {
   closeMenu();
   const it = hit(p);
   if (it) { pendingItem = it.id; moveTarget = approach(it); return; }
-  moveTarget = { x: clampF(p.x, "x"), y: clampF(Math.max(p.y, FLOOR.y0), "y") };
+  moveTarget = clampP(p.x, p.y);
 });
 canvas.addEventListener("pointermove", (e) => {
   const p = toCanvas(e);
   hoverItem = decorating ? null : hit(p)?.id || null;
   if (!drag) return;
-  const def = CATALOG[drag.it.type], R = def.layer === "wall" ? WALLR : FLOOR;
-  drag.it.x = Math.round(Math.max(R.x0 + def.s.width / 2, Math.min(R.x1 - def.s.width / 2, p.x - drag.ox)));
-  drag.it.y = Math.round(Math.max(R.y0 + (def.layer === "wall" ? def.s.height : 0), Math.min(R.y1, p.y - drag.oy)));
+  const def = CATALOG[drag.it.type], hw = def.s.width / 2;
+  if (def.layer === "wall") {
+    const x = Math.max(CX - HW + hw + 4, Math.min(CX + HW - hw - 4, p.x - drag.ox));
+    const b = backY(x);
+    drag.it.x = Math.round(x); drag.it.y = Math.round(Math.max(b - WALL_H + def.s.height + hw / 2 + 2, Math.min(b - 4 - hw / 2, p.y - drag.oy)));
+  } else {
+    const q = clampP(p.x - drag.ox, p.y - drag.oy, def.flat ? 3 : 4);
+    drag.it.x = Math.round(q.x); drag.it.y = Math.round(q.y);
+  }
   derive();
 });
 canvas.addEventListener("pointerup", () => { if (drag) { drag = null; saveRoomSoon(); } });
 canvas.addEventListener("pointerleave", () => (hoverItem = null));
 
-const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", A: "left", D: "right", W: "up", S: "down" };
+// arrows move; Q W E R are skills, so WASD is not used for walking
+const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, textarea, select")) return;
   if (decorating && (e.key === "Delete" || e.key === "Backspace")) { removeSelected(); return; }
@@ -556,7 +771,9 @@ document.addEventListener("keydown", (e) => {
   if (k) { keys.add(k); e.preventDefault(); return; }
   const f = FREE.find((x) => x.key === e.key);
   if (f) { doAction(f.kind, null); return; }
-  if (e.key === "e" || e.key === "E") { const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 E를 눌러 주세요."); }
+  const si = ["KeyQ", "KeyW", "KeyE", "KeyR"].indexOf(e.code);
+  if (si >= 0 && !e.repeat) { e.preventDefault(); castSkill(si); return; }
+  if (e.code === "KeyF" || e.code === "Space") { e.preventDefault(); const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 F(또는 스페이스)를 눌러 주세요."); }
   if (e.key === "Escape") closeMenu();
 });
 document.addEventListener("keyup", (e) => { const k = KEYMAP[e.key]; if (k) keys.delete(k); });
@@ -565,7 +782,7 @@ function nearestItem() {
   let best = null, bd = 34;
   for (const it of D.items) {
     const b = itemBase(it), wall = CATALOG[it.type].layer === "wall" && !it.fallen;
-    const d = wall ? Math.abs(b.x - actor.x) + Math.max(0, actor.y - FLOOR.y0 - 14) : Math.hypot(b.x - actor.x, (b.y - actor.y) * 1.3) - CATALOG[it.type].s.width / 3;
+    const d = wall ? Math.abs(b.x - actor.x) + Math.max(0, actor.y - backY(actor.x) - 14) : Math.hypot(b.x - actor.x, (b.y - actor.y) * 1.3) - 12;
     if (d < bd) { bd = d; best = it; }
   }
   return best;
@@ -605,7 +822,8 @@ function saveRoomSoon() {
 }
 function addItem(type) {
   const def = CATALOG[type];
-  const it = def.layer === "wall" ? { id: newId(), type, x: Math.round(120 + Math.random() * 80), y: 70 } : { id: newId(), type, x: Math.round(140 + Math.random() * 40), y: 176 };
+  const wx = Math.round(Math.random() < 0.5 ? 80 + Math.random() * 50 : 190 + Math.random() * 50);
+  const it = def.layer === "wall" ? { id: newId(), type, x: wx, y: Math.round(backY(wx) - 20) } : { id: newId(), type, ...(({ x, y }) => ({ x: Math.round(x), y: Math.round(y) }))(clampP(140 + Math.random() * 40, 160)) };
   room.items = [...(room.items || []), it]; selectedId = it.id; derive(); renderDecor(); saveRoomSoon();
 }
 function removeSelected() { if (!selectedId) return; room.items = room.items.filter((i) => i.id !== selectedId); selectedId = null; derive(); renderDecor(); saveRoomSoon(); }
