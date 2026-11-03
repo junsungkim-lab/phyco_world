@@ -11,6 +11,7 @@
 //   secret/<uid>           { posts: { <guestbookId>: text } }   only the writer and the owner read it
 //   minimi/<uid>           { look }                              each person writes their own
 //   visits/<uid>__<date>   { by, date, at }                      one per person per day
+//   coins/<uid>            { coins, log }                        each person's own coins
 
 const LS_KEY = "phyco-world-v3";
 
@@ -48,6 +49,7 @@ async function liveNet(db, room, user) {
       subs.push(db.collection("minimi").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data().look)); h.minimi(m); }, err("minimi")));
       subs.push(db.collection("visits").onSnapshot((s) => h.visits(s.docs.map((d) => d.data())), err("visits")));
       subs.push(db.collection("secret").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => Object.assign(m, d.data().posts || {})); h.secrets(m); }, () => {}));
+      if (id) subs.push(db.doc("coins/" + id).onSnapshot((s) => h.coins?.(s.exists ? s.data().coins || 0 : 0), () => {}));
       if (room) {
         subs.push(room.onPeers((c) => h.peers(c.peers.filter((p) => !p.sameTab).map((p) => ({ key: p.peer, by: p.by, ...p.presence })))));
       }
@@ -68,6 +70,11 @@ async function liveNet(db, room, user) {
     async updateGuest(gid, patch) { await db.collection("guestbook").doc(gid).update(patch); },
     async deleteGuest(gid) { await db.collection("guestbook").doc(gid).delete(); },
     async saveMinimi(look) { if (id) await db.doc("minimi/" + id).set({ look }); },
+    async addCoins(n, why) {
+      if (!id) return;
+      const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
+      await ref.set({ coins: (d.coins || 0) + n, log: [...(d.log || []), { n, why, at: Date.now() }].slice(-20) });
+    },
     async logVisit() {
       if (!id) return;
       const date = today();
@@ -90,11 +97,12 @@ function localNet() {
   let bc = null;
   try { bc = new BroadcastChannel("phyco-world"); } catch {}
   const peers = new Map();
+  const fresh = () => { data = load() || data; };   // another tab may have written since: start from storage
   const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {} bc?.postMessage({ t: "data" }); emitAll(); };
   const emitAll = () => {
     if (!h) return;
     h.room(data.room); h.pranks([...data.pranks].sort((a, b) => a.at - b.at)); h.guestbook([...data.guestbook].sort((a, b) => b.at - a.at));
-    h.minimi(data.minimi); h.visits(data.visits); h.secrets(data.secrets);
+    h.minimi(data.minimi); h.visits(data.visits); h.secrets(data.secrets); h.coins?.(data.coins || 0);
   };
   let myPresence = {};
   if (bc) {
@@ -124,14 +132,15 @@ function localNet() {
       const now = performance.now();
       if (bc && now - lastPres > 60) { lastPres = now; bc.postMessage({ t: "pres", tab, p: myPresence }); }
     },
-    async saveRoom(doc) { data.room = doc; save(); },
-    async addPrank(p) { data.pranks.push(p); if (data.pranks.length > 400) data.pranks.splice(0, data.pranks.length - 400); save(); },
-    async addGuest(e, secretText) { data.guestbook.push(e); if (secretText) data.secrets[e.id] = secretText; save(); },
-    async updateGuest(gid, patch) { const g = data.guestbook.find((x) => x.id === gid); if (g) Object.assign(g, patch); save(); },
-    async deleteGuest(gid) { data.guestbook = data.guestbook.filter((x) => x.id !== gid); save(); },
-    async saveMinimi(look) { data.minimi[meId] = look; save(); },
-    async logVisit() { data.visits.push({ by: meId, date: today(), at: Date.now() }); save(); },
-    async prunePranks(ids) { const s = new Set(ids); data.pranks = data.pranks.filter((p) => !s.has(p.id)); save(); },
+    async saveRoom(doc) { fresh(); data.room = doc; save(); },
+    async addPrank(p) { fresh(); data.pranks.push(p); if (data.pranks.length > 400) data.pranks.splice(0, data.pranks.length - 400); save(); },
+    async addGuest(e, secretText) { fresh(); data.guestbook.push(e); if (secretText) data.secrets[e.id] = secretText; save(); },
+    async updateGuest(gid, patch) { fresh(); const g = data.guestbook.find((x) => x.id === gid); if (g) Object.assign(g, patch); save(); },
+    async deleteGuest(gid) { fresh(); data.guestbook = data.guestbook.filter((x) => x.id !== gid); save(); },
+    async saveMinimi(look) { fresh(); data.minimi[meId] = look; save(); },
+    async addCoins(n) { fresh(); data.coins = (data.coins || 0) + n; save(); },
+    async logVisit() { fresh(); data.visits.push({ by: meId, date: today(), at: Date.now() }); save(); },
+    async prunePranks(ids) { fresh(); const s = new Set(ids); data.pranks = data.pranks.filter((p) => !s.has(p.id)); save(); },
     reset() { try { localStorage.removeItem(LS_KEY); } catch {} data = { room: null, pranks: [], guestbook: [], minimi: {}, visits: [], secrets: {}, me: meId }; save(); },
   };
 }

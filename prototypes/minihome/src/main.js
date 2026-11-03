@@ -61,13 +61,21 @@ const BY_TYPE = {
   frame: ["doodle", "cut", "drop"], clock: ["doodle", "drop"], poster: ["doodle", "cut", "drop"],
 };
 // Free actions: anywhere on the floor, keys 1-5.
-const FREE = [
-  { kind: "poop", label: "똥 싸기", ico: "💩", key: "1" },
-  { kind: "fart", label: "방귀 뀌기", ico: "💨", key: "2" },
-  { kind: "fire", label: "모닥불", ico: "🔥", key: "3" },
-  { kind: "frog", label: "개구리 풀기", ico: "🐸", key: "4" },
-  { kind: "slime", label: "슬라임 풀기", ico: "🟢", key: "5" },
+// What is switched on right now. For now only two pranks, big and easy to see; the furniture pranks and
+// the Q W E R jobs stay in the code, switched off.
+const FEATURES = { itemPranks: false, skills: false };
+const ALL_FREE = [
+  { kind: "poop", label: "똥 싸기", ico: "💩" },
+  { kind: "slime", label: "슬라임 풀기", ico: "🟢" },
+  { kind: "fart", label: "방귀 뀌기", ico: "💨", off: true },
+  { kind: "fire", label: "모닥불", ico: "🔥", off: true },
+  { kind: "frog", label: "개구리 풀기", ico: "🐸", off: true },
 ];
+const FREE = ALL_FREE.filter((f) => !f.off).map((f, i) => ({ ...f, key: String(i + 1) }));
+// coins
+const COIN_CATCH = 10;   // the owner, per wrecker caught in the act
+const COIN_RUIN = 2;     // a visitor, for turning someone's room into a ruin (mess 80+)
+const RUIN_AT = 80;
 const LOG = {
   kick: (n) => `${n}을(를) 걷어찼어요`, jump: (n) => `${n} 위에서 방방 뛰다 부쉈어요`, burn: (n) => `${n}에 불을 질렀어요`,
   slash: (n) => `${n}을(를) 칼로 찢었어요`, zap: (n) => `${n}에 번개를 내리꽂았어요`, shock: (n) => `${n}을(를) 감전시켰어요`,
@@ -175,7 +183,7 @@ const later = (s, fn) => setTimeout(fn, s * 1000);
 let shake = 0;
 
 // ---------- derived room: the layout plus every prank since the last clean-up ----------
-let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [] };
+let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [] };
 const RNG = (p) => mulberry(p.seed || hashStr(p.id));
 const isWallItem = (it) => CATALOG[it.type].layer === "wall" && !it.fallen;
 const anchorX = (def) => def.s.ax ?? def.s.width / 2;
@@ -276,7 +284,7 @@ function derive() {
   const cleaned = room.cleanedAt || 0;
   const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...it, dx: 0, dy: 0, rot: 0, flags: {}, fallen: false }));
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
-  const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [] };
+  const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [], goo: [] };
   const all = [...pranks, ...botPranks].filter((p) => p.at > cleaned).sort((a, b) => a.at - b.at);
   for (const p of all) {
     const r = RNG(p);
@@ -306,7 +314,7 @@ function derive() {
       switch (p.kind) {
         case "poop": out.poops.push({ x: p.x, y: p.y + 3 }); break;
         case "fire": out.fires.push({ key: p.id, x: p.x, y: p.y, at: p.at }); break;
-        case "frog": case "slime": out.critters.push({ key: p.id, kind: p.kind, x: p.x, y: p.y, seed: p.seed || 1 }); break;
+        case "frog": case "slime": out.critters.push({ key: p.id, kind: p.kind, x: p.x, y: p.y, seed: p.seed || 1 }); if (p.kind === "slime") out.goo.push({ x: p.x, y: p.y, seed: p.seed || 1 }); break;
       }
     }
   }
@@ -364,10 +372,11 @@ function playPrank(p) {
     case "water": spawn(splash, b.x, b.y - 2, { stone: false }); break;
     case "doodle": spawn(hitSpark, c.x, c.y); text("LOL"); break;
     case "drop": spawn(blunt, b.x, b.y, { height: 8 }); text("CLANG!"); break;
-    case "poop": text("PLOP!"); break;
+    case "poop": spawn(poof, b.x, b.y, { palette: ["#3a2412", "#6a3e1e", "#8b5a2b", "#b07a4a"] }); text("PLOP!"); shake = 0.2; break;
     case "fart": { const f = spawn(poison, b.x, b.y, { spread: 0.45 }); later(1.8, () => f.stop()); text("PFFT!"); break; }
     case "fire": spawn(fireRing, b.x, b.y, { reach: 46 }); break;
-    case "frog": case "slime": spawn(poof, b.x, b.y); break;
+    case "frog": spawn(poof, b.x, b.y); break;
+    case "slime": spawn(splash, b.x, b.y, { palette: ["#0b2f2b", "#12594a", "#1f8f4f", "#47c752", "#a6f06a", "#f0ffd2"], stone: false }); text("SPLAT!"); break;
   }
 }
 
@@ -383,6 +392,8 @@ let say = { text: "", until: 0 };
 function speak(text, secs = 1.4) { say = { text, until: Date.now() + secs * 1000 }; pushPresence(true); }
 
 let myJob = JOBS[0].id;
+let visitId = "";
+let ruinPaid = false;
 const cooldown = { q: 0, w: 0, e: 0, r: 0 };   // ready at (ms)
 function rollJob() {
   const pool = JOBS.filter((j) => j.id !== myJob);
@@ -398,7 +409,8 @@ function enterRoom() {
   heat = null; done = []; moveTarget = null; pendingItem = null; keys.clear(); closeMenu();
   spawn(poof, DOOR.x, DOOR.y + 4);
   speak(role === "owner" ? "다녀왔습니다~" : "실례합니다~");
-  later(0.6, rollJob);
+  if (FEATURES.skills) later(0.6, rollJob);
+  visitId = newId(); ruinPaid = false;
   if (role === "visitor") net?.logVisit().catch(() => {});
   renderControls();
 }
@@ -446,6 +458,7 @@ async function doAction(kind, it) {
   pranks.push(p); derive(); playPrank(p);
   net.addPrank(p).catch(() => toast("장난을 저장하지 못했어요. 권한을 확인해 주세요."));
   done.push(it ? LOG[kind](CATALOG[it.type].name) : LOG[kind]());
+  checkRuin();
   await wait(0.25);
   actor.st = "idle"; busy = false;
   if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
@@ -499,9 +512,40 @@ function renderCooldowns() {
   });
 }
 
-function finishVisit(caught) {
+// the owner is in the room: every visitor still wrecking (escape timer running) is caught, +10 each
+const caughtVisits = new Set();
+function catchWreckers() {
+  let n = 0;
+  for (const p of visiblePeers()) {
+    if (!p.wanted || isHostPeer(p)) continue;
+    const k = p.key + ":" + (p.visit || "");
+    if (caughtVisits.has(k)) continue;
+    caughtVisits.add(k); n++;
+  }
+  if (net?.mode === "local") for (const b of bots) if (b.wanted && !b.caught) {   // the practice bots, this browser only
+    b.caught = true; n++; b.say = "헉 들켰다!"; b.sayUntil = Date.now() + 1500; b.target = { x: DOOR.x, y: DOOR.y, exit: true }; b.st = "run"; b.wait = 0.6;
+  }
+  if (n) {
+    earn(COIN_CATCH * n, `깽판 현장 검거 ${n}명`);
+    speak("거기 서!", 1.5);
+    spawn(pow, actor.x, actor.y - 26, { text: `+${COIN_CATCH * n}` });
+  }
+}
+async function earn(n, why) {
+  myCoins += n; renderCoins();
+  toast(`🪙 +${n}코인 · ${why}`);
+  net?.addCoins(n, why).catch(() => {});
+}
+function checkRuin() {
+  if (role !== "visitor" || ruinPaid || !actor.on) return;
+  if (messScore() >= RUIN_AT) { ruinPaid = true; earn(COIN_RUIN, "남의 집 폐허 만들기"); }
+}
+let myCoins = 0;
+function renderCoins() { $("coins").textContent = myCoins; }
+
+function finishVisit(caught, byOwner) {
   const summary = done.slice(-4).join(", ");
-  const msg = caught ? `${summary} … 도망가다가 딱 걸렸어요 😱` : `${summary} … 그리고 무사히 도망갔어요 🏃`;
+  const msg = caught ? `${summary} … ${byOwner ? "주인이 들어와서 현장에서 딱 걸렸어요 🚨" : "도망가다가 딱 걸렸어요 😱"}` : `${summary} … 그리고 무사히 도망갔어요 🏃`;
   const e = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg, secret: false, auto: true, at: Date.now(), reply: null };
   guestbook.unshift(e); renderGuestbook(); renderNews();
   net.addGuest(e).catch(() => {});
@@ -529,7 +573,7 @@ function botTick(dt) {
     if (b.wait > 0) { b.wait -= dt; continue; }
     if (!b.target) {
       if (b.left <= 0) { b.target = { x: DOOR.x, y: DOOR.y, exit: true }; b.st = "run"; }
-      else if (Math.random() < 0.4) {
+      else if (FEATURES.skills && Math.random() < 0.4) {
         // cast a skill (not the big R) where it stands
         const job = jobById(b.job), i = Math.floor(Math.random() * 3), s = job.skills[i];
         b.dir = b.x > 160 ? -1 : 1;
@@ -539,7 +583,7 @@ function botTick(dt) {
         later(0.25, () => { b.st = "idle"; botPranks.push(p); derive(); playPrank(p); });
         b.left--; continue;
       }
-      else if (Math.random() < 0.7 && D.items.length) {
+      else if (FEATURES.itemPranks && Math.random() < 0.7 && D.items.length) {
         const it = D.items[Math.floor(Math.random() * D.items.length)];
         const acts = BY_TYPE[it.type] || ["kick"];
         const def = CATALOG[it.type], bb = itemBase(it), wall = def.layer === "wall" && !it.fallen;
@@ -558,7 +602,7 @@ function botTick(dt) {
     b.st = "windup"; b.t = 0; b.wait = 0.9;
     b.say = ["ㅋㅋㅋ", "으랴!", "흐흐", "이거나 먹어라"][Math.floor(Math.random() * 4)]; b.sayUntil = Date.now() + 1200;
     const p = { id: "b" + newId(), kind: t.kind, item: t.item || null, x: Math.round(b.x), y: Math.round(b.y), by: null, nick: b.nick, at: Date.now() + 600, seed: Math.floor(Math.random() * 1e9) };
-    later(0.6, () => { b.st = "idle"; botPranks.push(p); derive(); playPrank(p); });
+    later(0.6, () => { b.st = "idle"; botPranks.push(p); derive(); playPrank(p); b.wanted = true; });
     b.left--;
   }
 }
@@ -604,12 +648,25 @@ function drawItem(it) {
   if (decorating && it.id === selectedId) outline("#ff6f91", true);
   if (!decorating && hoverItem === it.id && actor.on) outline("rgba(255,211,107,0.95)", false);
 }
+// poop at double size, with a puddle, stink waves and flies, so it reads from across the room
 function drawPoop(p, now) {
-  ctx.drawImage(POOP, Math.round(p.x - 6), Math.round(p.y - 10));
-  ctx.fillStyle = "rgba(120,170,80,0.8)";
-  for (let i = 0; i < 3; i++) { const ph = (now * 1.2 + i / 3 + p.x * 0.01) % 1; ctx.globalAlpha = 1 - ph; ctx.fillRect(Math.round(p.x - 4 + i * 4 + Math.sin((ph + i) * 6) * 1.5), Math.round(p.y - 12 - ph * 10), 1, 3); }
+  const x = Math.round(p.x), y = Math.round(p.y);
+  ctx.fillStyle = "rgba(90,58,30,0.35)"; ctx.fillRect(x - 13, y - 2, 26, 4); ctx.fillRect(x - 10, y - 3, 20, 6);
+  ctx.drawImage(POOP, x - 12, y - 20, 24, 20);
+  for (let i = 0; i < 3; i++) {
+    const ph = (now * 0.9 + i / 3 + p.x * 0.01) % 1;
+    ctx.globalAlpha = 1 - ph; ctx.fillStyle = "#7cbf3a";
+    for (let k = 0; k < 6; k++) ctx.fillRect(Math.round(x - 8 + i * 8 + Math.sin((ph * 3 + k * 0.5 + i) * 2.4) * 2), Math.round(y - 24 - ph * 16 - k * 2), 2, 2);
+  }
   ctx.globalAlpha = 1; ctx.fillStyle = "#2d2540";
-  for (let i = 0; i < 2; i++) { const a = now * (5 + i * 2) + i * 3 + p.x; ctx.fillRect(Math.round(p.x + Math.cos(a) * 8), Math.round(p.y - 12 + Math.sin(a * 1.3) * 4), 2, 1); }
+  for (let i = 0; i < 3; i++) { const a = now * (5 + i * 2) + i * 2.1 + p.x; ctx.fillRect(Math.round(x + Math.cos(a) * 13), Math.round(y - 22 + Math.sin(a * 1.3) * 6), 2, 2); }
+}
+// green goo where a slime was let loose
+function drawGoo(g) {
+  const x = Math.round(g.x), y = Math.round(g.y), r = mulberry(g.seed || 1);
+  ctx.fillStyle = "#3fae4a"; ctx.fillRect(x - 14, y - 3, 28, 6); ctx.fillRect(x - 10, y - 5, 20, 10);
+  ctx.fillStyle = "#7fdc5a"; ctx.fillRect(x - 9, y - 3, 14, 3);
+  for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? "#3fae4a" : "#7fdc5a"; ctx.fillRect(Math.round(x + (r() - 0.5) * 44), Math.round(y + (r() - 0.5) * 14), 3, 2); }
 }
 function drawTrash(t) {
   const [a, b] = TRASH[t.kind] || TRASH.paper;
@@ -624,6 +681,7 @@ function render(now) {
   const isWall = isWallItem;
   for (const it of D.items) if (isWall(it)) drawItem(it);
   for (const it of D.items) if (CATALOG[it.type].flat) drawItem(it);
+  for (const g of D.goo) drawGoo(g);
   const list = [];
   for (const it of D.items) if (!isWall(it) && !CATALOG[it.type].flat) list.push([itemBase(it).y, () => drawItem(it)]);
   for (const t of D.trash) list.push([t.y - 0.5, () => drawTrash(t)]);
@@ -650,9 +708,9 @@ function myNick() { return (me.id && names[me.id]) || $("nick").value.trim() || 
 function renderLabels() {
   const want = [];
   const nowMs = Date.now();
-  if (actor.on) want.push({ key: "me", x: actor.x, y: actor.y, name: `${jobById(myJob).ico} ${myNick()} (나)`, say: say.until > nowMs ? say.text : "", me: true });
+  if (actor.on) want.push({ key: "me", x: actor.x, y: actor.y, name: `${FEATURES.skills ? jobById(myJob).ico + " " : ""}${myNick()} (나)`, say: say.until > nowMs ? say.text : "", me: true });
   for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) want.push({ key: p.key, x: pp.x, y: pp.y, name: (p.job ? jobById(p.job).ico + " " : "") + peerName(p), say: p.sayUntil > nowMs ? p.say : "", owner: isHostPeer(p) }); }
-  for (const b of bots) want.push({ key: b.key, x: b.x, y: b.y, name: `${jobById(b.job).ico} ${b.nick}`, say: b.sayUntil > nowMs ? b.say : "" });
+  for (const b of bots) want.push({ key: b.key, x: b.x, y: b.y, name: `${FEATURES.skills ? jobById(b.job).ico + " " : ""}${b.nick}`, say: b.sayUntil > nowMs ? b.say : "" });
   const seen = new Set();
   for (const w of want) {
     seen.add(w.key);
@@ -678,13 +736,10 @@ function tick(nowMs) {
     if (heat && !busy) {
       heat.left -= dt; $("timerNum").textContent = Math.max(0, heat.left).toFixed(1);
       if (heat.left <= 0) finishVisit(true);
-      else if (room.ownerId && role === "visitor") {
-        const o = visiblePeers().find(isHostPeer);
-        const pp = o && peerPos.get(o.key);
-        if (pp && Math.hypot(pp.x - actor.x, pp.y - actor.y) < 10) finishVisit(true);
-      }
+      else if (role === "visitor" && visiblePeers().some(isHostPeer)) finishVisit(true, true);   // the owner walked in
     }
   }
+  if (actor.on && role === "owner" && me.isOwner) catchWreckers();
   for (const p of visiblePeers()) {
     let pp = peerPos.get(p.key);
     if (!pp) { pp = { x: p.x, y: p.y }; peerPos.set(p.key, pp); }
@@ -706,10 +761,10 @@ function tick(nowMs) {
 }
 let lastPres = "";
 // the owner, walking in their own room as the owner (an owner testing as a visitor does not catch anyone)
-function isHostPeer(p) { return !!(room.ownerId && p.by === room.ownerId && p.host); }
+function isHostPeer(p) { return !!(p.host && (net?.mode === "local" || (room.ownerId && p.by === room.ownerId))); }
 function pushPresence(force) {
   if (!net) return;
-  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on ? myJob : null };
+  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on && FEATURES.skills ? myJob : null, visit: visitId };
   const s = JSON.stringify(p);
   if (s !== lastPres || force) { lastPres = s; net.presence(p); }
 }
@@ -740,7 +795,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!actor.on) return;   // taps during an action are kept: the walk starts when it ends
   closeMenu();
   const it = hit(p);
-  if (it) { pendingItem = it.id; moveTarget = approach(it); return; }
+  if (it && FEATURES.itemPranks) { pendingItem = it.id; moveTarget = approach(it); return; }
   moveTarget = clampP(p.x, p.y);
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -772,8 +827,8 @@ document.addEventListener("keydown", (e) => {
   const f = FREE.find((x) => x.key === e.key);
   if (f) { doAction(f.kind, null); return; }
   const si = ["KeyQ", "KeyW", "KeyE", "KeyR"].indexOf(e.code);
-  if (si >= 0 && !e.repeat) { e.preventDefault(); castSkill(si); return; }
-  if (e.code === "KeyF" || e.code === "Space") { e.preventDefault(); const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 F(또는 스페이스)를 눌러 주세요."); }
+  if (si >= 0 && !e.repeat && FEATURES.skills) { e.preventDefault(); castSkill(si); return; }
+  if ((e.code === "KeyF" || e.code === "Space") && FEATURES.itemPranks) { e.preventDefault(); const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 F(또는 스페이스)를 눌러 주세요."); }
   if (e.key === "Escape") closeMenu();
 });
 document.addEventListener("keyup", (e) => { const k = KEYMAP[e.key]; if (k) keys.delete(k); });
@@ -940,7 +995,7 @@ function renderCounter() {
 function messScore() {
   let s = 0;
   for (const it of D.items) s += (it.rot || it.dx ? 6 : 0) + Object.keys(it.flags).length * 6 + charOf(it) * 6 + (it.fallen ? 6 : 0);
-  s += D.trash.length + D.poops.length * 12 + D.fires.length * 14 + D.critters.length * 10 + D.ghosts.length * 8;
+  s += D.trash.length + D.goo.length * 4 + D.poops.length * 12 + D.fires.length * 14 + D.critters.length * 10 + D.ghosts.length * 8;
   return Math.min(100, Math.round(s));
 }
 function updateMeter() {
@@ -1161,6 +1216,7 @@ connect().then((n) => {
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
     visits(list) { visits = list; renderCounter(); },
     peers(list) { peers = list; resolveNames(); },
+    coins(n) { myCoins = n; renderCoins(); },
     error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
   });
   renderControls(); renderProfile(); renderGuestbook(); renderBgm();
