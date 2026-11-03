@@ -977,7 +977,9 @@ canvas.addEventListener("pointermove", (e) => {
   }
   derive();
 });
-canvas.addEventListener("pointerup", () => { if (drag) { drag = null; saveRoomSoon(); } });
+const endDrag = () => { if (drag) { drag = null; saveRoomSoon(); } };
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
 canvas.addEventListener("pointerleave", () => (hoverItem = null));
 
 // arrows move; Q W E R are skills, so WASD is not used for walking
@@ -1036,9 +1038,16 @@ function closeMenu() { menu.hidden = true; }
 // ---------- decorating (owner, 미니룸 tab) ----------
 let saveTimer = null;
 function cleanRoom() { return JSON.parse(JSON.stringify({ ...room, ownerId: room.ownerId || me.id })); }
+// while the owner is moving things, the room on screen is the truth: echoes of earlier saves are ignored until the last save lands
+let roomDirty = false, roomSaving = 0;
 function saveRoomSoon() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { if (me.isOwner) net?.saveRoom(cleanRoom()).catch(() => toast("방을 저장하지 못했어요.")); }, 500);
+  clearTimeout(saveTimer); roomDirty = true;
+  saveTimer = setTimeout(() => {
+    roomDirty = false;
+    if (!me.isOwner || !net) return;
+    roomSaving++;
+    net.saveRoom(cleanRoom()).catch(() => toast("방을 저장하지 못했어요.")).finally(() => { roomSaving--; });
+  }, 500);
 }
 // put a new piece where there is room: the free floor spot (or wall spot) farthest from everything else
 function freeSpot(type) {
@@ -1388,6 +1397,7 @@ connect().then((n) => {
   $("resetBtn").hidden = n.mode !== "local";
   n.subscribe({
     room(doc) {
+      if (doc && (drag || roomDirty || roomSaving)) return;   // my own unsaved moves win over an older copy
       if (doc) {
         room = { ...sampleRoom(), ...doc, layout: doc.layout };
         const fixed = me.isOwner && migrateRoom(room);
