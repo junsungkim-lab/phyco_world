@@ -285,9 +285,13 @@ function render(now) {
   fxCtx.putImageData(img, 0, 0);
   ctx.drawImage(fxCanvas, 0, 0);
   // armed tool target preview
-  if (armed && hover) {
-    ctx.strokeStyle = "#ff6f91"; ctx.lineWidth = 1;
-    ctx.strokeRect(Math.round(hover.x) - 6.5, Math.round(hover.y) - 2.5, 13, 5);
+  if (heat && actor.on && Math.floor(now * 4) % 2) {
+    ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 2;
+    ctx.strokeRect(279, 43, 32, WALL_BOTTOM - 42);
+  }
+  if (mode === "visitor" && moveTarget) {
+    ctx.fillStyle = "rgba(255,111,145,0.7)";
+    ctx.fillRect(Math.round(moveTarget.x) - 2, Math.round(moveTarget.y) - 1, 5, 2);
   }
 }
 
@@ -302,7 +306,13 @@ function tick(nowMs) {
   // actor
   if (actor.on) {
     actor.t += dt;
-    if (actor.state === "walk" || actor.state === "run") {
+    if (mode === "visitor" && !actor.arrive) moveActor(dt);
+    if (heat && actor.on && !busy) {
+      heat.left -= dt;
+      $("timerNum").textContent = Math.max(0, heat.left).toFixed(1);
+      if (heat.left <= 0) finishVisit(true);
+    }
+    if (actor.arrive && (actor.state === "walk" || actor.state === "run")) {
       const ddx = actor.tx - actor.x, ddy = actor.ty - actor.y, d = Math.hypot(ddx, ddy);
       if (Math.abs(ddx) > 0.5) actor.dir = ddx < 0 ? -1 : 1;
       const stepLen = actor.speed * dt;
@@ -335,85 +345,128 @@ function tick(nowMs) {
   requestAnimationFrame(tick);
 }
 
-// ---------- pranks ----------
-let busy = false;
+// ---------- pranks (the visitor is player-controlled) ----------
+// Move with arrow keys / WASD, or tap the floor to walk there. Pranks happen where the visitor stands.
+// After the first prank the owner is on the way home: reach the door before the timer runs out.
+const ESCAPE_SECS = 10;
+let busy = false;          // squatting / mid-prank: movement locked
+let heat = null;           // { left } once a prank has been done this visit
+let done = [];             // pranks done this visit
+const keys = new Set();
+let moveTarget = null;
 const visitorName = () => (document.getElementById("visitorName").value.trim() || "익명의 손님");
 function logPrank(text) {
   state.guestbook.unshift({ name: visitorName(), msg: text, at: Date.now(), auto: true });
   save(); renderGuestbook(); updateMeter();
 }
-async function enter() {
-  actor.on = true; actor.x = DOOR.x; actor.y = DOOR.y; actor.t = 0;
+function enter() {
+  actor.on = true; actor.x = DOOR.x; actor.y = DOOR.y; actor.t = 0; actor.state = "idle"; actor.dir = -1;
   actor.shirt = ["#5cc8b8", "#ff9a2a", "#7a6cff", "#56b356", "#ff6f91"][Math.floor(Math.random() * 5)];
+  heat = null; done = []; moveTarget = null; keys.clear();
   spawn(poof, DOOR.x, DOOR.y + 4);
-  await wait(0.2);
+  say("실례합니다~", 1.2);
+  renderVisit();
 }
-async function escape(line) {
-  say(line, 1.4);
-  await walkTo(DOOR.x, DOOR.y, 150);
-  spawn(poof, DOOR.x, DOOR.y + 4);
-  actor.on = false;
-}
-const clampFloor = (x, y) => ({ x: Math.max(FLOOR.x0 + 10, Math.min(FLOOR.x1 - 30, x)), y: Math.max(FLOOR.y0 + 6, Math.min(FLOOR.y1 - 2, y)) });
+const clampFloor = (x, y) => ({ x: Math.max(FLOOR.x0 + 6, Math.min(FLOOR.x1 - 6, x)), y: Math.max(FLOOR.y0 + 6, Math.min(FLOOR.y1 - 2, y)) });
+const nearDoor = () => Math.hypot(actor.x - DOOR.x, (actor.y - DOOR.y) * 1.5) < 14;
+const LABEL = { mess: "방을 어지르고", fire: "모닥불을 피우고", poop: "똥을 싸고" };
 
-async function prankMess() {
-  busy = true; setBusy();
-  await enter();
-  say("오 방 이쁘네~?", 1.2);
-  const targets = state.items.filter((i) => !CATALOG[i.type].flat).sort(() => Math.random() - 0.5).slice(0, 5);
-  for (const it of targets) {
-    const def = CATALOG[it.type];
-    const tx = it.x + it.dx + (def.layer === "wall" ? 0 : 0), ty = def.layer === "wall" ? FLOOR.y0 + 8 : it.y + it.dy + 2;
-    await walkTo(Math.max(FLOOR.x0, Math.min(FLOOR.x1 - 20, tx)), Math.min(FLOOR.y1 - 2, ty), 120);
-    spawn(pow, it.x + it.dx, it.y + it.dy - def.s.height / 2, { text: ["BANG!", "OOPS!", "CRASH!", "POW!"][Math.floor(Math.random() * 4)] });
-    it.dx += Math.round((Math.random() - 0.5) * 30);
-    if (def.layer === "wall") { it.rot = (Math.random() - 0.5) * 1.4; it.dy += Math.round(Math.random() * 10); }
-    else { it.rot = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 1.3); it.dy += Math.round((Math.random() - 0.5) * 8); }
-    { const R = def.layer === "wall" ? WALLR : FLOOR, hw = def.s.width / 2; it.dx = Math.max(R.x0 + hw - it.x, Math.min(R.x1 - hw - it.x, it.dx)); }
-    for (let k = 0; k < 3; k++) {
-      const p = clampFloor(it.x + (Math.random() - 0.5) * 50, it.y + (Math.random() - 0.5) * 24);
+function startHeat() {
+  if (heat) return;
+  heat = { left: ESCAPE_SECS };
+  toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`);
+}
+function finishVisit(caught) {
+  const what = [...new Set(done)].map((d) => LABEL[d]).join(", ");
+  if (caught) {
+    actor.state = "squat"; busy = true;
+    say("헉 들켰다...", 2);
+    logPrank(`${what} 도망가다가 주인한테 딱 걸렸습니다 😱`);
+    setTimeout(() => { spawn(poof, actor.x, actor.y + 2); actor.on = false; busy = false; heat = null; renderVisit(); setBusy(); }, 1600);
+  } else {
+    spawn(poof, DOOR.x, DOOR.y + 4);
+    actor.on = false; heat = null;
+    logPrank(`${what} 무사히 도망갔습니다 🏃`);
+    toast("도망 성공! 방명록에 기록이 남았어요.");
+    renderVisit();
+  }
+}
+
+function moveActor(dt) {
+  if (!actor.on || busy) return;
+  let vx = 0, vy = 0;
+  if (keys.has("left")) vx -= 1; if (keys.has("right")) vx += 1;
+  if (keys.has("up")) vy -= 1; if (keys.has("down")) vy += 1;
+  if (vx || vy) moveTarget = null;
+  else if (moveTarget) {
+    const ddx = moveTarget.x - actor.x, ddy = moveTarget.y - actor.y, d = Math.hypot(ddx, ddy);
+    if (d < 1.5) moveTarget = null; else { vx = ddx / d; vy = ddy / d; }
+  }
+  const len = Math.hypot(vx, vy);
+  if (!len) { actor.state = "idle"; return; }
+  const speed = heat ? 110 : 75;
+  actor.state = heat ? "run" : "walk";
+  if (vx) actor.dir = vx < 0 ? -1 : 1;
+  const p = clampFloor(actor.x + (vx / len) * speed * dt, actor.y + (vy / len) * speed * dt);
+  actor.x = p.x; actor.y = p.y;
+  if (heat && nearDoor()) finishVisit(false);
+}
+
+async function doPrank(kind) {
+  if (!actor.on || busy) return;
+  busy = true; setBusy(); moveTarget = null;
+  const x = actor.x, y = actor.y;
+  if (kind === "mess") {
+    say("으랴랴랴!", 0.9);
+    actor.state = "squat"; actor.t = 0;
+    await wait(0.35);
+    const near = state.items.filter((it) => {
+      const def = CATALOG[it.type];
+      if (def.flat) return false;
+      const ix = it.x + it.dx, iy = def.layer === "wall" ? FLOOR.y0 : it.y + it.dy;
+      return Math.abs(ix - x) < 46 + def.s.width / 2 && Math.abs(iy - y) < (def.layer === "wall" ? 30 : 34);
+    });
+    for (const it of near) {
+      const def = CATALOG[it.type];
+      spawn(pow, it.x + it.dx, it.y + it.dy - def.s.height / 2, { text: ["BANG!", "OOPS!", "CRASH!", "POW!"][Math.floor(Math.random() * 4)] });
+      it.dx += Math.round((Math.random() - 0.5) * 30);
+      if (def.layer === "wall") { it.rot = (Math.random() - 0.5) * 1.4; it.dy += Math.round(Math.random() * 10); }
+      else { it.rot = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 1.3); it.dy += Math.round((Math.random() - 0.5) * 8); }
+      { const R = def.layer === "wall" ? WALLR : FLOOR, hw = def.s.width / 2; it.dx = Math.max(R.x0 + hw - it.x, Math.min(R.x1 - hw - it.x, it.dx)); }
+    }
+    if (!near.length) spawn(pow, x, y - 16, { text: "OOPS!" });
+    for (let k = 0; k < 5; k++) {
+      const p = clampFloor(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 26);
       state.trash.push({ x: Math.round(p.x), y: Math.round(p.y), kind: ["paper", "peel", "can", "sock"][Math.floor(Math.random() * 4)] });
     }
-    save(); updateMeter();
-    await wait(0.25);
+    if (!near.length) say("여긴 부술 게 없네", 1.2);
+    await wait(0.3);
+  } else if (kind === "fire") {
+    actor.state = "squat"; actor.t = 0;
+    say("불멍 각이다", 1.1);
+    await wait(0.9);
+    const fx = x + actor.dir * 14;
+    const p = clampFloor(fx, y);
+    spawn(fireRing, p.x, p.y, { reach: 46 });
+    state.fires.push({ x: Math.round(p.x), y: Math.round(p.y), k: Date.now() + Math.random() });
+    syncFires();
+    say("앗 뜨거!", 0.9);
+    await wait(0.3);
+  } else if (kind === "poop") {
+    actor.state = "squat"; actor.t = 0;
+    say("끄응...", 1.3);
+    await wait(1.3);
+    state.poops.push({ x: Math.round(x), y: Math.round(y + 3) });
+    spawn(pow, x, y - 14, { text: "PLOP!" });
+    say("시원하다~", 0.9);
+    await wait(0.3);
   }
-  await escape("ㅋㅋㅋㅋ 튀어!");
-  logPrank("방을 엉망진창으로 어지르고 도망갔습니다 🌀");
-  busy = false; setBusy();
-}
-
-async function prankFire(at) {
-  busy = true; setBusy();
-  const p = clampFloor(at.x, at.y);
-  await enter();
-  await walkTo(p.x + 14, p.y, 80);
-  actor.dir = -1; actor.state = "squat"; actor.t = 0;
-  say("불멍 각이다", 1.2);
-  await wait(1.0);
-  spawn(fireRing, p.x, p.y, { reach: 46 });
-  state.fires.push({ x: Math.round(p.x), y: Math.round(p.y), k: Date.now() + Math.random() });
-  syncFires(); save(); updateMeter();
-  await wait(0.5);
-  await escape("앗 뜨거 ㅋㅋㅋ");
-  logPrank("방 한가운데 모닥불을 피우고 도망갔습니다 🔥");
-  busy = false; setBusy();
-}
-
-async function prankPoop(at) {
-  busy = true; setBusy();
-  const p = clampFloor(at.x, at.y);
-  await enter();
-  await walkTo(p.x, p.y - 1, 80);
-  actor.state = "squat"; actor.t = 0;
-  say("끄응...", 1.4);
-  await wait(1.4);
-  state.poops.push({ x: Math.round(p.x), y: Math.round(p.y + 3) });
-  spawn(pow, p.x, p.y - 14, { text: "PLOP!" });
+  done.push(kind);
   save(); updateMeter();
-  await wait(0.35);
-  await escape("시원하다~ 안녕!");
-  logPrank("방에 똥을 싸고 도망갔습니다 💩");
+  actor.state = "idle";
   busy = false; setBusy();
+  startHeat();
+  renderVisit();
 }
 
 function cleanUp() {
@@ -429,7 +482,6 @@ function cleanUp() {
 // ---------- UI wiring ----------
 let mode = "owner";
 let selected = null;
-let armed = null; // "fire" | "poop"
 let hover = null;
 let drag = null;
 const $ = (id) => document.getElementById(id);
@@ -453,10 +505,8 @@ function hit(p) {
 canvas.addEventListener("pointerdown", (e) => {
   const p = toCanvas(e);
   if (mode === "visitor") {
-    if (!armed || busy) return;
-    if (p.y < FLOOR.y0 - 4) { toast("바닥을 눌러 주세요."); return; }
-    const tool = armed; disarm();
-    tool === "fire" ? prankFire(p) : prankPoop(p);
+    if (!actor.on || busy) return;
+    moveTarget = clampFloor(p.x, Math.max(p.y, FLOOR.y0));
     return;
   }
   const it = hit(p);
@@ -488,33 +538,40 @@ function removeSelected() {
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, textarea, select")) return;
   if ((e.key === "Delete" || e.key === "Backspace") && mode === "owner") removeSelected();
-  if (e.key === "Escape") disarm();
+  if (mode !== "visitor") return;
+  const k = KEYMAP[e.key];
+  if (k) { keys.add(k); e.preventDefault(); }
+  if (e.key === "1") doPrank("mess");
+  if (e.key === "2") doPrank("fire");
+  if (e.key === "3") doPrank("poop");
 });
+const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", A: "left", D: "right", W: "up", S: "down" };
+document.addEventListener("keyup", (e) => { const k = KEYMAP[e.key]; if (k) keys.delete(k); });
+window.addEventListener("blur", () => keys.clear());
 
 function updateSelection() {
   $("removeBtn").disabled = !selected;
   $("selName").textContent = selected ? `선택: ${CATALOG[selected.type].name}` : "가구를 눌러서 고르고, 끌어서 옮기세요.";
 }
 
-function arm(tool) {
-  if (busy) return;
-  armed = armed === tool ? null : tool;
-  document.querySelectorAll("[data-prank]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.prank === armed)));
-  canvas.classList.toggle("aiming", !!armed);
-  $("hint").textContent = armed ? (armed === "fire" ? "불 피울 바닥 자리를 누르세요. (Esc로 취소)" : "똥 쌀 바닥 자리를 누르세요. (Esc로 취소)") : visitorHint;
-}
-function disarm() { armed = null; arm(null); armed = null; document.querySelectorAll("[data-prank]").forEach((b) => b.setAttribute("aria-pressed", "false")); canvas.classList.remove("aiming"); $("hint").textContent = mode === "visitor" ? visitorHint : ownerHint; }
-const visitorHint = "장난을 고르세요. 어지럽히기는 바로 시작하고, 나머지는 바닥 자리를 누르면 시작해요.";
+const visitorHint = "방향키(WASD)나 바닥 터치로 움직이고, 장난 버튼(1·2·3)은 서 있는 자리에서 써요. 장난 후엔 문으로 도망!";
 const ownerHint = "아래 가구를 눌러 방에 놓고, 끌어서 옮기세요.";
+function renderVisit() {
+  const inRoom = actor.on;
+  document.querySelectorAll("[data-prank]").forEach((b) => (b.disabled = busy || !inRoom));
+  $("reenterBtn").hidden = inRoom || mode !== "visitor";
+  $("timer").hidden = !(heat && inRoom);
+  $("pad").hidden = !(inRoom && mode === "visitor");
+}
 function setBusy() {
-  document.querySelectorAll("[data-prank]").forEach((b) => (b.disabled = busy));
+  renderVisit();
   $("modeOwner").disabled = busy;
 }
 
 function setMode(m) {
   if (busy) return;
   mode = m;
-  disarm();
+  if (m === "owner") { actor.on = false; heat = null; keys.clear(); moveTarget = null; }
   selected = null; updateSelection();
   $("ownerTools").hidden = m !== "owner";
   $("visitorTools").hidden = m !== "visitor";
@@ -526,7 +583,9 @@ function setMode(m) {
     state.visits.today++; state.visits.total++; save(); renderCounter();
     toast(`${state.owner}님의 홈피에 놀러 왔어요. 방문자 수가 올라갔습니다.`);
     bgm.play(state.bgm); renderBgm();
+    enter();
   }
+  renderVisit();
 }
 
 // ---------- counter, meter, guestbook ----------
@@ -620,10 +679,15 @@ $("resetBtn").addEventListener("click", () => {
   state = sampleState(); uid = 100; syncFires(); save();
   renderAll(); toast("예시 방으로 되돌렸어요.");
 });
-document.querySelectorAll("[data-prank]").forEach((b) => b.addEventListener("click", () => {
-  if (b.dataset.prank === "mess") { disarm(); if (!busy) prankMess(); }
-  else arm(b.dataset.prank);
-}));
+document.querySelectorAll("[data-prank]").forEach((b) => b.addEventListener("click", () => doPrank(b.dataset.prank)));
+$("reenterBtn").addEventListener("click", () => { if (mode === "visitor" && !actor.on) { state.visits.today++; state.visits.total++; save(); renderCounter(); enter(); } });
+document.querySelectorAll("[data-dir]").forEach((b) => {
+  const k = b.dataset.dir;
+  const on = (e) => { e.preventDefault(); keys.add(k); b.setPointerCapture?.(e.pointerId); };
+  const off = () => keys.delete(k);
+  b.addEventListener("pointerdown", on);
+  b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("lostpointercapture", off);
+});
 const pal = $("palette");
 for (const [type, def] of Object.entries(CATALOG)) {
   const b = document.createElement("button");

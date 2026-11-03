@@ -102,6 +102,15 @@ body[data-mode="visitor"] #room { cursor: default; }
 #room.aiming { cursor: crosshair; }
 #bubble { position: absolute; transform: translate(-50%, -100%); background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 2px 10px; font-family: var(--display); font-size: 15px; white-space: nowrap; pointer-events: none; }
 #bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 8px; height: 8px; background: #fff; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateX(-50%) rotate(45deg); }
+#timer { position: absolute; left: 8px; top: 8px; background: var(--ink); color: #fff; border-radius: 999px; padding: 3px 12px; font-size: 13px; font-variant-numeric: tabular-nums; animation: pulse 0.5s steps(2) infinite alternate; }
+#timer b { color: var(--sun); }
+@keyframes pulse { to { background: var(--berry-ink); } }
+#pad { position: absolute; right: 8px; bottom: 8px; display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(2, 34px); gap: 3px; touch-action: none; }
+#pad button { border: 2px solid var(--ink); border-radius: 8px; background: rgba(255,250,243,0.85); font-size: 13px; padding: 0; user-select: none; -webkit-user-select: none; }
+#pad button:active { background: var(--sun); }
+#pad [data-dir="up"] { grid-column: 2; } #pad [data-dir="left"] { grid-column: 1; grid-row: 2; }
+#pad [data-dir="down"] { grid-column: 2; grid-row: 2; } #pad [data-dir="right"] { grid-column: 3; grid-row: 2; }
+@media (hover: hover) and (pointer: fine) { #pad { opacity: 0.55; } #pad:hover { opacity: 1; } }
 .hint { font-size: 13px; color: var(--muted); margin: 0; min-height: 1.5em; }
 
 .tools { display: grid; gap: 10px; }
@@ -155,7 +164,7 @@ body[data-mode="visitor"] #room { cursor: default; }
   .prank { grid-template-columns: auto 1fr; justify-items: start; text-align: left; column-gap: 10px; }
   .prank .ico { grid-row: span 2; align-self: center; }
 }
-@media (prefers-reduced-motion: reduce) { .eq.on i { animation: none; height: 10px; } #meterFill { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #timer { animation: none; } .eq.on i { animation: none; height: 10px; } #meterFill { transition: none; } }
 </style>
 
 <div class="app">
@@ -200,6 +209,13 @@ body[data-mode="visitor"] #room { cursor: default; }
         <div class="stage">
           <canvas id="room" aria-label="꾸밀 수 있는 미니룸"></canvas>
           <div id="bubble" hidden></div>
+          <div id="timer" hidden>주인 도착까지 <b id="timerNum">10.0</b>초 · 문으로!</div>
+          <div id="pad" hidden aria-label="이동 버튼">
+            <button type="button" data-dir="up" aria-label="위">▲</button>
+            <button type="button" data-dir="left" aria-label="왼쪽">◀</button>
+            <button type="button" data-dir="down" aria-label="아래">▼</button>
+            <button type="button" data-dir="right" aria-label="오른쪽">▶</button>
+          </div>
         </div>
         <p class="hint" id="hint"></p>
 
@@ -214,10 +230,11 @@ body[data-mode="visitor"] #room { cursor: default; }
 
         <div class="tools" id="visitorTools" hidden>
           <label class="visitor-name" for="visitorName">내 이름 <input id="visitorName" maxlength="12" placeholder="익명의 손님" value="동훈"></label>
+          <button type="button" class="btn primary" id="reenterBtn" hidden>다시 놀러 들어가기</button>
           <div class="pranks">
-            <button type="button" class="prank" data-prank="mess" aria-pressed="false"><span class="ico" aria-hidden="true">🌀</span><b>어지럽히고 도망가기</b><small>가구를 다 뒤집어 놔요</small></button>
-            <button type="button" class="prank" data-prank="fire" aria-pressed="false"><span class="ico" aria-hidden="true">🔥</span><b>불 지피기</b><small>근처 가구가 그을려요</small></button>
-            <button type="button" class="prank" data-prank="poop" aria-pressed="false"><span class="ico" aria-hidden="true">💩</span><b>똥 싸고 도망가기</b><small>파리도 따라와요</small></button>
+            <button type="button" class="prank" data-prank="mess" aria-pressed="false"><span class="ico" aria-hidden="true">🌀</span><b>어지럽히기</b><small>근처 가구를 뒤집어요 · 1</small></button>
+            <button type="button" class="prank" data-prank="fire" aria-pressed="false"><span class="ico" aria-hidden="true">🔥</span><b>불 지피기</b><small>옆에 모닥불 · 2</small></button>
+            <button type="button" class="prank" data-prank="poop" aria-pressed="false"><span class="ico" aria-hidden="true">💩</span><b>똥 싸기</b><small>그 자리에 뿌직 · 3</small></button>
           </div>
         </div>
       </section>
