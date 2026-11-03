@@ -1,711 +1,950 @@
-// phyco world — minihome prank prototype.
-// Throwaway prototype code (see ../README.md). Effects come from pixelfx (MIT, vendored in ../vendor/pixelfx).
+// phyco world v2 — a minihome where friends come over and wreck your room, together, live.
+// Throwaway prototype code (see ../README.md). Effects: pixelfx (MIT, vendored in ../vendor/pixelfx).
 import { createFrame, clearFrame, createFx, composite } from "../vendor/pixelfx/src/core/index.js";
 import * as campfire from "../vendor/pixelfx/src/fx/fire/campfire.js";
 import * as fireRing from "../vendor/pixelfx/src/fx/fire/fire-ring.js";
 import * as poof from "../vendor/pixelfx/src/fx/spawn/poof.js";
 import * as pow from "../vendor/pixelfx/src/fx/explosions/cartoon-pow.js";
+import * as smallBoom from "../vendor/pixelfx/src/fx/explosions/small-explosion.js";
 import * as confetti from "../vendor/pixelfx/src/fx/ui/confetti.js";
+import * as blunt from "../vendor/pixelfx/src/fx/impacts/blunt-hit.js";
+import * as hitSpark from "../vendor/pixelfx/src/fx/impacts/hit-spark.js";
+import * as lightning from "../vendor/pixelfx/src/fx/lightning/lightning-strike.js";
+import * as zap from "../vendor/pixelfx/src/fx/lightning/zap-hit.js";
+import * as sparkArc from "../vendor/pixelfx/src/fx/lightning/spark-arc.js";
+import * as snowflake from "../vendor/pixelfx/src/fx/ice/snowflake-burst.js";
+import * as acid from "../vendor/pixelfx/src/fx/nature/acid-splash.js";
+import * as poison from "../vendor/pixelfx/src/fx/nature/poison-cloud.js";
+import * as splash from "../vendor/pixelfx/src/fx/water/splash.js";
+import * as ripples from "../vendor/pixelfx/src/fx/water/ripples.js";
+import * as ghost from "../vendor/pixelfx/src/fx/critters/ghost.js";
+import * as frog from "../vendor/pixelfx/src/fx/critters/frog.js";
+import * as slime from "../vendor/pixelfx/src/fx/critters/slime.js";
+import * as swordSlash from "../vendor/pixelfx/src/fx/melee/sword-slash.js";
+import * as doubleSlash from "../vendor/pixelfx/src/fx/melee/double-slash.js";
 import { Bgm, SONGS } from "./bgm.js";
+import { CATALOG, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
+import { connect, newId, today } from "./net.js";
 
-// ---------- room geometry (native pixels; the canvas is scaled up with image-rendering: pixelated) ----------
-const W = 320, H = 200;
-const WALL_BOTTOM = 112;
+const $ = (id) => document.getElementById(id);
+
+// ---------- room geometry (native pixels; canvas is scaled up with image-rendering: pixelated) ----------
+const W = 320, H = 200, WALL_BOTTOM = 112;
 const FLOOR = { x0: 10, x1: 310, y0: 124, y1: 198 };
 const WALLR = { x0: 10, x1: 270, y0: 18, y1: 104 };
 const DOOR = { x: 294, y: 132 };
+const ESCAPE_SECS = 10;
 
-// ---------- sprites ----------
-function sprite(w, h, draw) {
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const g = c.getContext("2d");
-  const r = (x, y, ww, hh, col) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
-  draw(r);
-  return c;
-}
-
-const CATALOG = {
-  bed: { name: "침대", layer: "floor", s: sprite(56, 32, (r) => {
-    r(0, 4, 6, 28, "#7b4b2a"); r(1, 2, 4, 3, "#9a643a"); r(51, 14, 5, 18, "#7b4b2a");
-    r(5, 19, 46, 9, "#a86d3e"); r(5, 26, 46, 2, "#7b4b2a"); r(1, 30, 3, 2, "#4a2c18"); r(52, 30, 3, 2, "#4a2c18");
-    r(5, 14, 46, 6, "#fdf6ee"); r(18, 12, 33, 9, "#f28ab2"); r(18, 12, 33, 2, "#f9b6cf"); r(18, 19, 33, 2, "#d9668f");
-    r(7, 10, 11, 5, "#ffffff"); r(7, 14, 11, 1, "#dcd3e8");
-  }) },
-  sofa: { name: "소파", layer: "floor", s: sprite(50, 28, (r) => {
-    r(4, 2, 42, 14, "#3fa7a0"); r(4, 2, 42, 2, "#6cc7bf"); r(0, 8, 8, 16, "#358f89"); r(42, 8, 8, 16, "#358f89");
-    r(0, 8, 8, 2, "#5bb8b0"); r(42, 8, 8, 2, "#5bb8b0"); r(6, 14, 38, 8, "#4bbab2"); r(24, 14, 2, 8, "#358f89");
-    r(2, 22, 46, 3, "#2a716c"); r(4, 25, 3, 3, "#5a3a22"); r(43, 25, 3, 3, "#5a3a22"); r(30, 5, 9, 8, "#ffd36b"); r(30, 5, 9, 2, "#ffe7a3");
-  }) },
-  tv: { name: "TV", layer: "floor", s: sprite(34, 36, (r) => {
-    r(2, 24, 30, 9, "#6b4a8a"); r(2, 24, 30, 2, "#8e6db0"); r(4, 33, 3, 3, "#4a3260"); r(27, 33, 3, 3, "#4a3260");
-    r(4, 3, 26, 20, "#2b2b3a"); r(6, 5, 22, 14, "#5ec8f2"); r(7, 6, 6, 2, "#bfeeff"); r(14, 21, 6, 3, "#2b2b3a");
-    r(24, 20, 2, 2, "#ff6f91"); r(10, 0, 1, 3, "#555"); r(22, 0, 1, 3, "#555");
-  }) },
-  plant: { name: "화분", layer: "floor", s: sprite(16, 30, (r) => {
-    r(3, 21, 10, 9, "#d0603e"); r(2, 20, 12, 3, "#e57b55"); r(7, 5, 2, 16, "#3d8b3d");
-    r(2, 9, 6, 4, "#56b356"); r(8, 5, 6, 4, "#56b356"); r(1, 14, 6, 4, "#4aa14a"); r(9, 12, 6, 4, "#4aa14a"); r(5, 1, 5, 4, "#6cc96c");
-  }) },
-  lamp: { name: "스탠드", layer: "floor", s: sprite(14, 40, (r) => {
-    r(3, 37, 8, 3, "#4a4458"); r(6, 12, 2, 25, "#6d6680"); r(1, 2, 12, 9, "#ffd36b"); r(0, 10, 14, 2, "#e8b84a"); r(3, 3, 3, 6, "#ffe9a8");
-  }) },
-  rug: { name: "러그", layer: "floor", flat: true, s: sprite(64, 14, (r) => {
-    r(8, 0, 48, 14, "#c97bd6"); r(3, 2, 58, 10, "#c97bd6"); r(0, 4, 64, 6, "#c97bd6");
-    r(12, 3, 40, 8, "#e6a7ee"); r(16, 6, 32, 2, "#c97bd6"); r(30, 4, 4, 6, "#fff2a8");
-  }) },
-  shelf: { name: "책장", layer: "floor", s: sprite(32, 46, (r) => {
-    r(0, 0, 32, 46, "#8b5a33"); r(3, 3, 26, 40, "#5c3a20"); r(3, 16, 26, 2, "#8b5a33"); r(3, 30, 26, 2, "#8b5a33");
-    const books = ["#ff6f91", "#5cc8b8", "#ffd36b", "#7a6cff", "#f2f0fa", "#56b356"];
-    for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) r(4 + i * 4, 6 + row * 14 + (i % 3), 3, 10 - (i % 3), books[(i + row * 2) % 6]);
-  }) },
-  table: { name: "케이크 테이블", layer: "floor", s: sprite(34, 26, (r) => {
-    r(11, 4, 12, 7, "#fff8f0"); r(11, 4, 12, 2, "#f28ab2"); r(16, 0, 2, 4, "#7ec8f0"); r(16, 0, 2, 1, "#ffd36b");
-    r(0, 10, 34, 4, "#c08a52"); r(0, 10, 34, 1, "#dcae7a"); r(3, 14, 3, 12, "#8b5a33"); r(28, 14, 3, 12, "#8b5a33");
-  }) },
-  bear: { name: "곰인형", layer: "floor", s: sprite(16, 18, (r) => {
-    r(2, 0, 3, 3, "#8a5a32"); r(11, 0, 3, 3, "#8a5a32"); r(3, 1, 10, 7, "#b07a4a"); r(4, 7, 8, 8, "#b07a4a");
-    r(6, 4, 4, 2, "#e8c9a0"); r(5, 3, 1, 1, "#221a2e"); r(10, 3, 1, 1, "#221a2e"); r(6, 9, 4, 4, "#e8c9a0");
-    r(3, 13, 4, 5, "#9c6a3e"); r(9, 13, 4, 5, "#9c6a3e"); r(5, 8, 6, 1, "#ff6f91");
-  }) },
-  frame: { name: "액자", layer: "wall", s: sprite(24, 20, (r) => {
-    r(0, 0, 24, 20, "#c9a227"); r(2, 2, 20, 16, "#bfe3ff"); r(4, 11, 8, 7, "#6cc96c"); r(10, 8, 10, 10, "#4aa14a"); r(16, 4, 3, 3, "#ffd36b");
-  }) },
-  clock: { name: "시계", layer: "wall", s: sprite(16, 16, (r) => {
-    r(4, 0, 8, 16, "#5c3a20"); r(0, 4, 16, 8, "#5c3a20"); r(1, 2, 14, 12, "#5c3a20"); r(2, 1, 12, 14, "#5c3a20");
-    r(2, 3, 12, 10, "#fffaf3"); r(3, 2, 10, 12, "#fffaf3"); r(7, 4, 2, 5, "#2d2540"); r(8, 7, 4, 2, "#2d2540");
-  }) },
-  poster: { name: "하트 포스터", layer: "wall", s: sprite(20, 26, (r) => {
-    r(0, 0, 20, 26, "#fffaf3"); r(0, 0, 20, 1, "#d9cde8"); r(4, 6, 4, 3, "#ff6f91"); r(12, 6, 4, 3, "#ff6f91"); r(3, 8, 14, 4, "#ff6f91");
-    r(5, 12, 10, 3, "#ff6f91"); r(7, 15, 6, 2, "#ff6f91"); r(9, 17, 2, 1, "#ff6f91"); r(5, 7, 2, 1, "#ffc2d1"); r(4, 21, 12, 1, "#9a8fb0");
-  }) },
+// ---------- what you can do ----------
+// Item actions: walk up to a piece of furniture and click it (or press E).
+const ACTIONS = {
+  kick: { label: "발로 차기", ico: "🦶" }, jump: { label: "방방 뛰다 부수기", ico: "🤸" }, burn: { label: "불 지르기", ico: "🔥" },
+  slash: { label: "칼로 찢기", ico: "🗡️" }, zap: { label: "번개 내리꽂기", ico: "⚡" }, shock: { label: "감전시키기", ico: "🔌" },
+  freeze: { label: "꽁꽁 얼리기", ico: "🧊" }, acid: { label: "독 뿌리기", ico: "🧪" }, boom: { label: "폭파하기", ico: "💣" },
+  splat: { label: "케이크 엎기", ico: "🎂" }, haunt: { label: "유령 씌우기", ico: "👻" }, water: { label: "물 쏟기", ico: "💦" },
+  doodle: { label: "낙서하기", ico: "🖍️" }, cut: { label: "칼로 긋기", ico: "🔪" }, drop: { label: "떨어뜨리기", ico: "⬇️" },
+};
+const BY_TYPE = {
+  bed: ["jump", "burn", "kick"], sofa: ["slash", "burn", "kick"], tv: ["zap", "kick"], lamp: ["shock", "kick"],
+  plant: ["freeze", "acid", "kick"], shelf: ["boom", "kick"], table: ["splat", "kick"], bear: ["haunt", "slash", "kick"],
+  rug: ["water", "burn"], fishbowl: ["freeze", "kick"], guitar: ["shock", "slash", "kick"],
+  frame: ["doodle", "cut", "drop"], clock: ["doodle", "drop"], poster: ["doodle", "cut", "drop"],
+};
+// Free actions: anywhere on the floor, keys 1-5.
+const FREE = [
+  { kind: "poop", label: "똥 싸기", ico: "💩", key: "1" },
+  { kind: "fart", label: "방귀 뀌기", ico: "💨", key: "2" },
+  { kind: "fire", label: "모닥불", ico: "🔥", key: "3" },
+  { kind: "frog", label: "개구리 풀기", ico: "🐸", key: "4" },
+  { kind: "slime", label: "슬라임 풀기", ico: "🟢", key: "5" },
+];
+const LOG = {
+  kick: (n) => `${n}을(를) 걷어찼어요`, jump: (n) => `${n} 위에서 방방 뛰다 부쉈어요`, burn: (n) => `${n}에 불을 질렀어요`,
+  slash: (n) => `${n}을(를) 칼로 찢었어요`, zap: (n) => `${n}에 번개를 내리꽂았어요`, shock: (n) => `${n}을(를) 감전시켰어요`,
+  freeze: (n) => `${n}을(를) 꽁꽁 얼렸어요`, acid: (n) => `${n}에 독을 뿌렸어요`, boom: (n) => `${n}을(를) 폭파했어요`,
+  splat: () => `케이크를 엎었어요`, haunt: (n) => `${n}에 유령을 씌웠어요`, water: (n) => `${n}에 물을 쏟았어요`,
+  doodle: (n) => `${n}에 낙서했어요`, cut: (n) => `${n}을(를) 칼로 그었어요`, drop: (n) => `${n}을(를) 떨어뜨렸어요`,
+  poop: () => `똥을 쌌어요`, fart: () => `방귀를 뀌었어요`, fire: () => `방 한가운데 모닥불을 피웠어요`,
+  frog: () => `개구리를 풀어놨어요`, slime: () => `슬라임을 풀어놨어요`,
 };
 
-const POOP = sprite(12, 10, (r) => {
-  r(4, 0, 3, 2, "#7a4a26"); r(3, 2, 6, 3, "#8b5a2b"); r(1, 5, 10, 3, "#7a4a26"); r(0, 8, 12, 2, "#6a3e1e");
-  r(4, 2, 2, 1, "#b07a4a"); r(2, 5, 3, 1, "#a06a3a"); r(1, 8, 3, 1, "#8b5a2b"); r(4, 6, 1, 1, "#fff"); r(7, 6, 1, 1, "#fff");
-});
-
 // ---------- state ----------
-const KEY = "phyco-world-v1";
-const today = () => new Date().toISOString().slice(0, 10);
-let uid = 1;
-const item = (type, x, y) => ({ id: uid++, type, x, y, dx: 0, dy: 0, rot: 0, charred: 0 });
+const SAMPLE_ITEMS = () => [
+  { id: "i1", type: "rug", x: 150, y: 172 }, { id: "i2", type: "bed", x: 62, y: 150 }, { id: "i3", type: "shelf", x: 120, y: 138 },
+  { id: "i4", type: "lamp", x: 22, y: 150 }, { id: "i5", type: "tv", x: 230, y: 160 }, { id: "i6", type: "plant", x: 268, y: 168 },
+  { id: "i7", type: "table", x: 160, y: 186 }, { id: "i8", type: "bear", x: 92, y: 192 }, { id: "i9", type: "frame", x: 150, y: 66 },
+  { id: "i10", type: "clock", x: 196, y: 52 }, { id: "i11", type: "poster", x: 236, y: 78 },
+];
+const sampleRoom = () => ({ items: SAMPLE_ITEMS(), wall: "stripe", floor: "wood", bgm: 0, mood: "들뜸", intro: "꾸미느라 3시간 걸림. 건드리면 죽음", title: "어서 와, 내 방은 처음이지?", ownerNick: "준", cleanedAt: 0, ownerId: null });
 
-function sampleState() {
-  return {
-    owner: "준", mood: "들뜸", intro: "꾸미느라 3시간 걸림. 건드리면 죽음",
-    bgm: 0,
-    visits: { total: 128, today: 3, date: today() },
-    items: [
-      item("rug", 150, 172), item("bed", 62, 150), item("shelf", 120, 138), item("lamp", 22, 150),
-      item("tv", 230, 160), item("plant", 268, 168), item("table", 160, 186), item("bear", 92, 192),
-      item("frame", 150, 66), item("clock", 196, 52), item("poster", 236, 78),
-    ],
-    poops: [], fires: [], trash: [],
-    guestbook: [
-      { name: "민지 (예시)", msg: "방 너무 이쁘다 ㅠㅠ 곰인형 어디서 샀어?", at: Date.now() - 3600e3 * 5, auto: false },
-      { name: "동훈 (예시)", msg: "다음에 놀러 갈게 ㅋㅋ 각오해라", at: Date.now() - 3600e3 * 2, auto: false },
-    ],
-  };
-}
+let net = null;
+let me = { id: null, isOwner: false, canWrite: false };
+let room = sampleRoom();
+let roomLoaded = false;
+let pranks = [];          // from the store
+let botPranks = [];       // friend-bot pranks (this browser only)
+let guestbook = [];
+let secrets = {};
+let minimiMap = {};
+let visits = [];
+let peers = [];           // other people in the room right now
+const names = {};
+const loadedAt = Date.now();
+const played = new Set();
+let myLook = null;
+let role = "visitor";     // "owner" | "visitor" (the owner can switch to test pranks)
 
-function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (s && Array.isArray(s.items)) return s;
-  } catch {}
-  return sampleState();
-}
-let state = load();
-uid = Math.max(1, ...state.items.map((i) => i.id + 1));
-if (state.visits.date !== today()) state.visits = { ...state.visits, today: 0, date: today() };
-
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
-}
-
-// ---------- canvas setup ----------
-const canvas = document.getElementById("room");
+// ---------- canvas ----------
+const canvas = $("room");
 canvas.width = W; canvas.height = H;
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
-const fxCanvas = document.createElement("canvas");
-fxCanvas.width = W; fxCanvas.height = H;
+const fxCanvas = document.createElement("canvas"); fxCanvas.width = W; fxCanvas.height = H;
 const fxCtx = fxCanvas.getContext("2d");
 const frame = createFrame(W, H);
 const img = new ImageData(W, H);
 const tmp = document.createElement("canvas");
 const tmpCtx = tmp.getContext("2d");
+let bgCache = { key: "", c: null };
+function background() {
+  const key = room.wall + "/" + room.floor;
+  if (bgCache.key === key) return bgCache.c;
+  const wall = WALLS[room.wall] || WALLS.stripe, floor = FLOORS[room.floor] || FLOORS.wood;
+  const c = sprite(W, H, (r) => {
+    wall.draw(r, W, WALL_BOTTOM);
+    r(28, 22, 58, 50, "#ffffff"); r(31, 25, 52, 44, "#9fd8ff"); r(56, 25, 2, 44, "#ffffff"); r(31, 46, 52, 2, "#ffffff");
+    r(36, 30, 12, 4, "#ffffff"); r(40, 28, 8, 2, "#ffffff"); r(64, 52, 14, 4, "#eaf7ff"); r(70, 30, 6, 6, "#ffe48a");
+    r(22, 18, 70, 4, "#c97bd6"); r(22, 22, 8, 54, "#e6a7ee"); r(84, 22, 8, 54, "#e6a7ee");
+    r(280, 44, 30, WALL_BOTTOM - 44, "#8b5a33"); r(283, 47, 24, WALL_BOTTOM - 47, "#a86d3e"); r(286, 52, 18, 22, "#9a643a"); r(286, 80, 18, 26, "#9a643a"); r(302, 78, 3, 3, "#ffd36b");
+    r(0, WALL_BOTTOM - 2, W, 4, "#c49a76");
+    floor.draw(r, W, WALL_BOTTOM + 2, H);
+  });
+  bgCache = { key, c };
+  return c;
+}
 
 // ---------- effects ----------
 let fxList = [];
-let seed = 1;
+let seedN = 1;
 function spawn(mod, x, y, o = {}) {
-  const fx = createFx(mod, { x: Math.round(x), y: Math.round(y), seed: seed++, ...o });
+  const fx = createFx(mod, { x: Math.round(x), y: Math.round(y), seed: seedN++, ...o });
   fxList.push(fx);
   return fx;
 }
-const fireFx = new Map(); // fire index key -> fx
-function syncFires() {
-  for (const [k, fx] of fireFx) if (!state.fires.some((f) => f.k === k)) { fx.stop(); fireFx.delete(k); }
-  for (const f of state.fires) if (!fireFx.has(f.k)) fireFx.set(f.k, spawn(campfire, f.x, f.y, { height: 18 }));
-}
-syncFires();
+const later = (s, fn) => setTimeout(fn, s * 1000);
+let shake = 0;
 
-// ---------- tiny async timeline ----------
-let clock = 0;
-const timers = [];
-const wait = (s) => new Promise((res) => timers.push({ at: clock + s, res }));
-
-// ---------- visitor actor ----------
-const actor = { on: false, x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, speed: 60, state: "idle", dir: -1, shirt: "#5cc8b8", t: 0, arrive: null };
-function walkTo(x, y, speed = 70) {
-  actor.tx = x; actor.ty = y; actor.speed = speed; actor.state = speed > 100 ? "run" : "walk";
-  return new Promise((res) => (actor.arrive = res));
-}
-function drawActor(g, x, y, st, t, shirt, dir) {
-  const r = (xx, yy, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x + (dir < 0 ? -xx - w : xx)), Math.round(y + yy), w, h); };
-  const squat = st === "squat";
-  const moving = st === "walk" || st === "run";
-  const step = moving ? Math.floor(t * (st === "run" ? 14 : 8)) % 2 : 0;
-  const shake = squat ? (Math.floor(t * 20) % 2) : 0;
-  const top = squat ? -14 : -20;
-  // shadow
-  g.fillStyle = "rgba(45,37,64,0.18)"; g.fillRect(Math.round(x - 5), Math.round(y - 1), 10, 2);
-  // legs
-  if (squat) { r(-4 + shake, -4, 3, 3, "#3a3550"); r(1 + shake, -4, 3, 3, "#3a3550"); }
-  else { r(-3, -6 + (step ? -1 : 0), 2, 6 - (step ? 1 : 0), "#3a3550"); r(1, -6 + (step ? 0 : -1), 2, 6 - (step ? 0 : 1), "#3a3550"); }
-  // body
-  r(-4 + shake, top + 8, 8, squat ? 4 : 7, shirt);
-  r(-5 + shake, top + 9, 1, 4, "#f5c9a3"); r(4 + shake, top + 9, 1, 4, "#f5c9a3");
-  // head
-  r(-4 + shake, top, 8, 8, "#f5c9a3"); r(-4 + shake, top, 8, 3, "#2d2540"); r(-5 + shake, top + 1, 1, 4, "#2d2540");
-  r(1 + shake, top + 4, 1, 1, "#2d2540"); r(3 + shake, top + 4, 1, 1, "#2d2540");
-  if (st === "run" || squat) r(1 + shake, top + 6, 3, 1, "#c4504e");
-}
-
-// speech bubble over the canvas (DOM, so Korean renders crisply)
-const bubble = document.getElementById("bubble");
-let bubbleUntil = 0;
-function say(text, secs = 1.6) {
-  bubble.textContent = text; bubble.hidden = false; bubbleUntil = clock + secs;
-}
-
-// ---------- room drawing ----------
-const bg = sprite(W, H, (r) => {
-  r(0, 0, W, WALL_BOTTOM, "#fdeef4");
-  for (let x = 0; x < W; x += 12) r(x, 0, 6, WALL_BOTTOM, "#fbe3ed");
-  for (let y = 8; y < WALL_BOTTOM - 6; y += 16) for (let x = 3 + ((y / 16) % 2) * 6; x < W; x += 12) r(x, y, 1, 1, "#f3c6d8");
-  // window
-  r(28, 22, 58, 50, "#ffffff"); r(31, 25, 52, 44, "#9fd8ff"); r(56, 25, 2, 44, "#ffffff"); r(31, 46, 52, 2, "#ffffff");
-  r(36, 30, 12, 4, "#ffffff"); r(40, 28, 8, 2, "#ffffff"); r(64, 52, 14, 4, "#eaf7ff"); r(70, 30, 6, 6, "#ffe48a");
-  r(22, 18, 70, 4, "#c97bd6"); r(22, 22, 8, 54, "#e6a7ee"); r(84, 22, 8, 54, "#e6a7ee");
-  // door
-  r(280, 44, 30, WALL_BOTTOM - 44, "#8b5a33"); r(283, 47, 24, WALL_BOTTOM - 47, "#a86d3e"); r(286, 52, 18, 22, "#9a643a"); r(286, 80, 18, 26, "#9a643a"); r(302, 78, 3, 3, "#ffd36b");
-  // baseboard + floor
-  r(0, WALL_BOTTOM - 2, W, 4, "#c49a76"); r(0, WALL_BOTTOM + 2, W, H - WALL_BOTTOM, "#e2b98a");
-  for (let y = WALL_BOTTOM + 2, row = 0; y < H; y += 10, row++) {
-    r(0, y, W, 1, "#d4a674");
-    for (let x = (row % 2) * 24; x < W; x += 48) r(x, y, 1, 10, "#d4a674");
-  }
-});
-
-function drawItem(it, now) {
-  const def = CATALOG[it.type];
-  if (!def) return;
-  const s = def.s;
-  let src = s;
-  if (it.charred > 0.01) {
-    tmp.width = s.width; tmp.height = s.height;
-    tmpCtx.globalCompositeOperation = "source-over";
-    tmpCtx.clearRect(0, 0, s.width, s.height);
-    tmpCtx.drawImage(s, 0, 0);
-    tmpCtx.globalCompositeOperation = "source-atop";
-    tmpCtx.fillStyle = `rgba(28,18,16,${Math.min(0.88, it.charred * 0.88)})`;
-    tmpCtx.fillRect(0, 0, s.width, s.height);
-    src = tmp;
-  }
-  const x = it.x + it.dx, y = it.y + it.dy;
-  ctx.save();
-  ctx.translate(Math.round(x), Math.round(y));
-  if (it.rot) ctx.rotate(it.rot);
-  ctx.drawImage(src, -Math.round(s.width / 2), -s.height);
-  ctx.restore();
-  if (it === selected && mode === "owner") {
-    ctx.strokeStyle = "#ff6f91"; ctx.setLineDash([2, 2]); ctx.lineWidth = 1;
-    ctx.strokeRect(Math.round(x - s.width / 2) - 1.5, Math.round(y - s.height) - 1.5, s.width + 3, s.height + 3);
-    ctx.setLineDash([]);
-  }
-}
-
-function drawPoop(p, now) {
-  ctx.drawImage(POOP, Math.round(p.x - 6), Math.round(p.y - 10));
-  // stink lines
-  ctx.fillStyle = "rgba(120,170,80,0.8)";
-  for (let i = 0; i < 3; i++) {
-    const ph = (now * 1.2 + i / 3 + p.x * 0.01) % 1;
-    const yy = p.y - 12 - ph * 10, xx = p.x - 4 + i * 4 + Math.round(Math.sin((ph + i) * 6) * 1.5);
-    ctx.globalAlpha = 1 - ph; ctx.fillRect(Math.round(xx), Math.round(yy), 1, 3);
-  }
-  ctx.globalAlpha = 1;
-  // two flies orbiting
-  ctx.fillStyle = "#2d2540";
-  for (let i = 0; i < 2; i++) {
-    const a = now * (5 + i * 2) + i * 3 + p.x;
-    ctx.fillRect(Math.round(p.x + Math.cos(a) * 8), Math.round(p.y - 12 + Math.sin(a * 1.3) * 4), 2, 1);
-  }
-}
-const TRASH = { paper: ["#ffffff", "#d9cde8"], peel: ["#ffd36b", "#c9a227"], can: ["#e2504e", "#b33a38"], sock: ["#7a6cff", "#5a4ccc"] };
-function drawTrash(t) {
-  const [a, b] = TRASH[t.kind] || TRASH.paper;
-  ctx.fillStyle = a; ctx.fillRect(t.x - 2, t.y - 3, 4, 3);
-  ctx.fillStyle = b; ctx.fillRect(t.x - 2, t.y - 1, 4, 1);
-  if (t.kind === "peel") { ctx.fillStyle = a; ctx.fillRect(t.x - 4, t.y - 1, 2, 1); ctx.fillRect(t.x + 2, t.y - 1, 2, 1); }
-}
-
-function render(now) {
-  ctx.drawImage(bg, 0, 0);
-  // charred scorch on floor around fires
-  for (const f of state.fires) {
-    ctx.fillStyle = "rgba(40,24,20,0.35)";
-    ctx.fillRect(f.x - 22, f.y - 3, 44, 6); ctx.fillRect(f.x - 16, f.y - 5, 32, 10);
-  }
-  for (const it of state.items) if (CATALOG[it.type]?.layer === "wall") drawItem(it, now);
-  for (const it of state.items) if (CATALOG[it.type]?.flat) drawItem(it, now);
-  const drawables = [];
-  for (const it of state.items) if (CATALOG[it.type]?.layer === "floor" && !CATALOG[it.type].flat) drawables.push([it.y + it.dy, () => drawItem(it, now)]);
-  for (const t of state.trash) drawables.push([t.y - 0.5, () => drawTrash(t)]);
-  for (const p of state.poops) drawables.push([p.y, () => drawPoop(p, now)]);
-  if (actor.on) drawables.push([actor.y + 0.1, () => drawActor(ctx, actor.x, actor.y, actor.state, actor.t, actor.shirt, actor.dir)]);
-  drawables.sort((a, b) => a[0] - b[0]).forEach((d) => d[1]());
-  // pixelfx effects on top
-  clearFrame(frame);
-  for (const fx of fxList) fx.draw(frame);
-  composite(frame, img.data, null);
-  fxCtx.putImageData(img, 0, 0);
-  ctx.drawImage(fxCanvas, 0, 0);
-  // armed tool target preview
-  if (heat && actor.on && Math.floor(now * 4) % 2) {
-    ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 2;
-    ctx.strokeRect(279, 43, 32, WALL_BOTTOM - 42);
-  }
-  if (mode === "visitor" && moveTarget) {
-    ctx.fillStyle = "rgba(255,111,145,0.7)";
-    ctx.fillRect(Math.round(moveTarget.x) - 2, Math.round(moveTarget.y) - 1, 5, 2);
-  }
-}
-
-// ---------- loop ----------
-let last = performance.now();
-let saveSoon = 0;
-function tick(nowMs) {
-  const dt = Math.min(0.05, (nowMs - last) / 1000);
-  last = nowMs;
-  clock += dt;
-  for (let i = timers.length - 1; i >= 0; i--) if (timers[i].at <= clock) { timers[i].res(); timers.splice(i, 1); }
-  // actor
-  if (actor.on) {
-    actor.t += dt;
-    if (mode === "visitor" && !actor.arrive) moveActor(dt);
-    if (heat && actor.on && !busy) {
-      heat.left -= dt;
-      $("timerNum").textContent = Math.max(0, heat.left).toFixed(1);
-      if (heat.left <= 0) finishVisit(true);
-    }
-    if (actor.arrive && (actor.state === "walk" || actor.state === "run")) {
-      const ddx = actor.tx - actor.x, ddy = actor.ty - actor.y, d = Math.hypot(ddx, ddy);
-      if (Math.abs(ddx) > 0.5) actor.dir = ddx < 0 ? -1 : 1;
-      const stepLen = actor.speed * dt;
-      if (d <= stepLen) { actor.x = actor.tx; actor.y = actor.ty; actor.state = "idle"; const a = actor.arrive; actor.arrive = null; a && a(); }
-      else { actor.x += (ddx / d) * stepLen; actor.y += (ddy / d) * stepLen; }
-    }
-  }
-  // fires char nearby furniture
-  if (state.fires.length) {
-    for (const it of state.items) {
-      for (const f of state.fires) {
-        const d = Math.hypot(it.x + it.dx - f.x, (it.y + it.dy - f.y) * 1.6);
-        if (d < 90) it.charred = Math.min(1, it.charred + dt * 0.12 * (1 - d / 90));
+// ---------- derived room: the layout plus every prank since the last clean-up ----------
+let D = { items: [], poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [] };
+const RNG = (p) => mulberry(p.seed || hashStr(p.id));
+function clampF(v, axis) { return axis === "x" ? Math.max(FLOOR.x0 + 6, Math.min(FLOOR.x1 - 6, v)) : Math.max(FLOOR.y0 + 4, Math.min(FLOOR.y1 - 1, v)); }
+const itemBase = (it) => ({ x: it.x + it.dx, y: it.y + it.dy });
+const itemCenter = (it) => ({ x: it.x + it.dx, y: it.y + it.dy - CATALOG[it.type].s.height / 2 });
+function derive() {
+  const cleaned = room.cleanedAt || 0;
+  const items = (room.items || []).filter((it) => CATALOG[it.type]).map((it) => ({ ...it, dx: 0, dy: 0, rot: 0, flags: {}, fallen: false }));
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  const out = { items, poops: [], fires: [], critters: [], ghosts: [], puddles: [], trash: [] };
+  const all = [...pranks, ...botPranks].filter((p) => p.at > cleaned).sort((a, b) => a.at - b.at);
+  for (const p of all) {
+    const r = RNG(p);
+    const it = p.item ? byId[p.item] : null;
+    const trash = (n, kinds, x, y, spread = 50) => { for (let k = 0; k < n; k++) out.trash.push({ x: clampF(x + (r() - 0.5) * spread, "x"), y: clampF(y + (r() - 0.5) * 22, "y"), kind: kinds[Math.floor(r() * kinds.length)] }); };
+    if (it) {
+      const def = CATALOG[it.type];
+      const knock = (amt = 1) => { it.dx += Math.round((r() - 0.5) * 26 * amt); it.rot = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 1.1) * amt; if (def.layer !== "wall") it.dy += Math.round((r() - 0.5) * 6); };
+      switch (p.kind) {
+        case "kick": knock(); trash(2, ["paper", "sock", "can"], it.x, it.y); break;
+        case "jump": it.flags.broken = 1; it.rot = (r() - 0.5) * 0.3; trash(3, ["paper", "sock"], it.x, it.y); break;
+        case "burn": out.fires.push({ key: p.id, x: it.x + it.dx, y: Math.min(FLOOR.y1, it.y + it.dy + 1), at: p.at, small: true }); break;
+        case "slash": case "cut": it.flags.slashed = 1; break;
+        case "zap": case "shock": it.flags.broken = 1; it.flags.sooty = 1; break;
+        case "freeze": it.flags.frozen = 1; break;
+        case "acid": it.flags.wilted = 1; it.rot = it.rot || 0.25; break;
+        case "boom": it.flags.broken = 1; it.flags.sooty = 1; knock(0.6); trash(6, ["book", "paper"], it.x, it.y, 80); break;
+        case "splat": knock(0.5); trash(4, ["cake"], it.x, it.y + 6, 40); break;
+        case "haunt": out.ghosts.push({ key: p.id, item: it.id }); break;
+        case "water": it.flags.wet = 1; out.puddles.push({ key: p.id, item: it.id }); break;
+        case "doodle": it.flags.doodle = (it.flags.doodle || 0) + 1; it.doodleSeed = p.seed; break;
+        case "drop": if (def.layer === "wall") { it.fallen = true; it.dy = 0; it.y = FLOOR.y0 + 8 + Math.floor(r() * 18); it.rot = (r() - 0.5) * 1.2; } else knock(); break;
+      }
+      const R = def.layer === "wall" && !it.fallen ? WALLR : FLOOR, hw = def.s.width / 2;
+      it.dx = Math.max(R.x0 + hw - it.x, Math.min(R.x1 - hw - it.x, it.dx));
+    } else {
+      switch (p.kind) {
+        case "poop": out.poops.push({ x: p.x, y: p.y + 3 }); break;
+        case "fire": out.fires.push({ key: p.id, x: p.x, y: p.y, at: p.at }); break;
+        case "frog": case "slime": out.critters.push({ key: p.id, kind: p.kind, x: p.x, y: p.y, seed: p.seed || 1 }); break;
       }
     }
-    saveSoon += dt;
-    if (saveSoon > 2) { saveSoon = 0; save(); updateMeter(); }
   }
-  for (const fx of fxList) fx.update(dt);
-  fxList = fxList.filter((fx) => !fx.done());
-  if (!bubble.hidden) {
-    if (clock > bubbleUntil) bubble.hidden = true;
-    else {
-      const rect = canvas.getBoundingClientRect();
-      bubble.style.left = `${(actor.x / W) * 100}%`;
-      bubble.style.top = `${((actor.y - 26) / H) * 100}%`;
-    }
-  }
-  render(clock);
-  requestAnimationFrame(tick);
+  D = out;
+  syncPersistent();
+  updateMeter();
 }
 
-// ---------- pranks (the visitor is player-controlled) ----------
-// Move with arrow keys / WASD, or tap the floor to walk there. Pranks happen where the visitor stands.
-// After the first prank the owner is on the way home: reach the door before the timer runs out.
-const ESCAPE_SECS = 10;
-let busy = false;          // squatting / mid-prank: movement locked
-let heat = null;           // { left } once a prank has been done this visit
-let done = [];             // pranks done this visit
+// persistent loop effects (fires, ghosts, puddles, critters), keyed by prank id
+const persist = new Map();
+function syncPersistent() {
+  const want = new Map();
+  for (const f of D.fires) want.set("f" + f.key, () => spawn(campfire, f.x, f.y, { height: f.small ? 14 : 18 }));
+  for (const g of D.ghosts) want.set("g" + g.key, () => spawn(ghost, 0, 0, { hover: 10 }));
+  for (const p of D.puddles) want.set("p" + p.key, () => spawn(ripples, 0, 0));
+  for (const c of D.critters) want.set("c" + c.key, () => spawn(c.kind === "frog" ? frog : slime, c.x, c.y, { seed: c.seed }));
+  for (const [k, fx] of persist) if (!want.has(k)) { fx.stop(); persist.delete(k); }
+  for (const [k, make] of want) if (!persist.has(k)) persist.set(k, make());
+}
+function placePersistent(now) {
+  for (const g of D.ghosts) { const fx = persist.get("g" + g.key), it = D.items.find((i) => i.id === g.item); if (fx && it) { const c = itemCenter(it); fx.options.x = Math.round(c.x); fx.options.y = Math.round(c.y - CATALOG[it.type].s.height / 2 + 6); } }
+  for (const p of D.puddles) { const fx = persist.get("p" + p.key), it = D.items.find((i) => i.id === p.item); if (fx && it) { const b = itemBase(it); fx.options.x = Math.round(b.x); fx.options.y = Math.round(b.y - 4); } }
+  for (const c of D.critters) {
+    const fx = persist.get("c" + c.key); if (!fx) continue;
+    const r = mulberry(c.seed), a = r() * 6.28, sp = 0.15 + r() * 0.15, t = now * sp + a;
+    fx.options.x = Math.round(clampF(c.x + Math.sin(t) * 70 + Math.sin(t * 2.3) * 20, "x"));
+    fx.options.y = Math.round(clampF(c.y + Math.cos(t * 1.4) * 22, "y"));
+    fx.options.flip = Math.cos(t) < 0;
+  }
+}
+
+// one-shot effects for a prank, played for everyone in the room when it happens
+function playPrank(p) {
+  if (played.has(p.id)) return;
+  played.add(p.id);
+  const it = p.item ? D.items.find((i) => i.id === p.item) : null;
+  const b = it ? itemBase(it) : { x: p.x, y: p.y };
+  const h = it ? CATALOG[it.type].s.height : 20;
+  const c = { x: b.x, y: b.y - h / 2 };
+  const text = (t) => spawn(pow, c.x, c.y, { text: t });
+  switch (p.kind) {
+    case "kick": spawn(blunt, b.x, b.y, { height: Math.min(22, h * 0.6) }); text(["BANG!", "OOPS!", "POW!"][(p.seed || 0) % 3]); shake = 0.25; break;
+    case "jump": text("BOING!"); later(0.25, () => { spawn(blunt, b.x, b.y, { height: 8 }); shake = 0.35; }); break;
+    case "burn": spawn(fireRing, b.x, b.y, { reach: 40 }); break;
+    case "slash": spawn(doubleSlash, c.x - 10, c.y + 10); break;
+    case "cut": spawn(swordSlash, c.x - 10, c.y + 10, { radius: 22 }); break;
+    case "zap": spawn(lightning, c.x, b.y - 2); later(0.85, () => { spawn(zap, c.x, c.y); shake = 0.3; }); break;
+    case "shock": { const s = spawn(sparkArc, c.x, b.y); later(1.3, () => { s.stop(); spawn(zap, c.x, c.y); }); break; }
+    case "freeze": spawn(snowflake, c.x, b.y + 4, { count: 6 }); break;
+    case "acid": spawn(acid, b.x, b.y); break;
+    case "boom": spawn(smallBoom, b.x, b.y, { size: 0.55 }); shake = 0.6; break;
+    case "splat": spawn(splash, b.x, b.y, { palette: ["#7a2e48", "#c45a7a", "#f28ab2", "#f9b6cf", "#fff0f5", "#ffffff"], stone: false }); text("SPLAT!"); break;
+    case "haunt": spawn(poof, c.x, c.y + 8, { palette: ["#10142a", "#3e4f86", "#a3b8e2", "#d8e4ff", "#ffffff"] }); break;
+    case "water": spawn(splash, b.x, b.y - 2, { stone: false }); break;
+    case "doodle": spawn(hitSpark, c.x, c.y); text("LOL"); break;
+    case "drop": spawn(blunt, b.x, b.y, { height: 8 }); text("CLANG!"); break;
+    case "poop": text("PLOP!"); break;
+    case "fart": { const f = spawn(poison, b.x, b.y, { spread: 0.45 }); later(1.8, () => f.stop()); text("PFFT!"); break; }
+    case "fire": spawn(fireRing, b.x, b.y, { reach: 46 }); break;
+    case "frog": case "slime": spawn(poof, b.x, b.y); break;
+  }
+}
+
+// ---------- me (the player's minimi) ----------
+const actor = { on: false, x: DOOR.x, y: DOOR.y, dir: -1, st: "idle", t: 0 };
+let busy = false;        // mid-action: movement locked
+let heat = null;         // escape timer after a prank (visitors only)
+let done = [];           // what I did this visit, for the guestbook log
 const keys = new Set();
 let moveTarget = null;
-const visitorName = () => (document.getElementById("visitorName").value.trim() || "익명의 손님");
-function logPrank(text) {
-  state.guestbook.unshift({ name: visitorName(), msg: text, at: Date.now(), auto: true });
-  save(); renderGuestbook(); updateMeter();
-}
-function enter() {
-  actor.on = true; actor.x = DOOR.x; actor.y = DOOR.y; actor.t = 0; actor.state = "idle"; actor.dir = -1;
-  actor.shirt = ["#5cc8b8", "#ff9a2a", "#7a6cff", "#56b356", "#ff6f91"][Math.floor(Math.random() * 5)];
-  heat = null; done = []; moveTarget = null; keys.clear();
-  spawn(poof, DOOR.x, DOOR.y + 4);
-  say("실례합니다~", 1.2);
-  renderVisit();
-}
-const clampFloor = (x, y) => ({ x: Math.max(FLOOR.x0 + 6, Math.min(FLOOR.x1 - 6, x)), y: Math.max(FLOOR.y0 + 6, Math.min(FLOOR.y1 - 2, y)) });
-const nearDoor = () => Math.hypot(actor.x - DOOR.x, (actor.y - DOOR.y) * 1.5) < 14;
-const LABEL = { mess: "방을 어지르고", fire: "모닥불을 피우고", poop: "똥을 싸고" };
+let pendingItem = null;  // walking up to this item to open its menu
+let say = { text: "", until: 0 };
+function speak(text, secs = 1.4) { say = { text, until: Date.now() + secs * 1000 }; pushPresence(true); }
 
-function startHeat() {
-  if (heat) return;
-  heat = { left: ESCAPE_SECS };
-  toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`);
+function enterRoom() {
+  actor.on = true; actor.x = DOOR.x; actor.y = DOOR.y; actor.dir = -1; actor.st = "idle"; actor.t = 0;
+  heat = null; done = []; moveTarget = null; pendingItem = null; keys.clear(); closeMenu();
+  spawn(poof, DOOR.x, DOOR.y + 4);
+  speak(role === "owner" ? "다녀왔습니다~" : "실례합니다~");
+  if (role === "visitor") net?.logVisit().catch(() => {});
+  renderControls();
 }
-function finishVisit(caught) {
-  const what = [...new Set(done)].map((d) => LABEL[d]).join(", ");
-  if (caught) {
-    actor.state = "squat"; busy = true;
-    say("헉 들켰다...", 2);
-    logPrank(`${what} 도망가다가 주인한테 딱 걸렸습니다 😱`);
-    setTimeout(() => { spawn(poof, actor.x, actor.y + 2); actor.on = false; busy = false; heat = null; renderVisit(); setBusy(); }, 1600);
-  } else {
-    spawn(poof, DOOR.x, DOOR.y + 4);
-    actor.on = false; heat = null;
-    logPrank(`${what} 무사히 도망갔습니다 🏃`);
-    toast("도망 성공! 방명록에 기록이 남았어요.");
-    renderVisit();
-  }
-}
+function leaveRoom() { actor.on = false; heat = null; busy = false; closeMenu(); pushPresence(true); renderControls(); }
+const nearDoor = () => Math.hypot(actor.x - DOOR.x, (actor.y - DOOR.y) * 1.5) < 14;
 
 function moveActor(dt) {
   if (!actor.on || busy) return;
   let vx = 0, vy = 0;
   if (keys.has("left")) vx -= 1; if (keys.has("right")) vx += 1;
   if (keys.has("up")) vy -= 1; if (keys.has("down")) vy += 1;
-  if (vx || vy) moveTarget = null;
+  if (vx || vy) { moveTarget = null; pendingItem = null; closeMenu(); }
   else if (moveTarget) {
     const ddx = moveTarget.x - actor.x, ddy = moveTarget.y - actor.y, d = Math.hypot(ddx, ddy);
-    if (d < 1.5) moveTarget = null; else { vx = ddx / d; vy = ddy / d; }
+    if (d < 1.5) { moveTarget = null; if (pendingItem) { const it = D.items.find((i) => i.id === pendingItem); pendingItem = null; if (it) { actor.dir = itemBase(it).x < actor.x ? -1 : 1; openMenu(it); } } }
+    else { vx = ddx / d; vy = ddy / d; }
   }
   const len = Math.hypot(vx, vy);
-  if (!len) { actor.state = "idle"; return; }
-  const speed = heat ? 110 : 75;
-  actor.state = heat ? "run" : "walk";
+  if (!len) { if (actor.st === "walk" || actor.st === "run") actor.st = "idle"; return; }
+  const speed = heat ? 110 : 92;
+  actor.st = heat ? "run" : "walk";
   if (vx) actor.dir = vx < 0 ? -1 : 1;
-  const p = clampFloor(actor.x + (vx / len) * speed * dt, actor.y + (vy / len) * speed * dt);
-  actor.x = p.x; actor.y = p.y;
+  actor.x = clampF(actor.x + (vx / len) * speed * dt, "x");
+  actor.y = clampF(actor.y + (vy / len) * speed * dt, "y");
   if (heat && nearDoor()) finishVisit(false);
 }
+function approach(it) {
+  const def = CATALOG[it.type], b = itemBase(it);
+  const wall = def.layer === "wall" && !it.fallen;
+  const side = actor.x < b.x ? -1 : 1;
+  const x = wall ? b.x : b.x + side * (def.s.width / 2 + 5);
+  const y = wall ? FLOOR.y0 + 6 : (def.flat ? b.y - 4 : b.y + 2);
+  return { x: clampF(x, "x"), y: clampF(y, "y") };
+}
+const wait = (s) => new Promise((res) => setTimeout(res, s * 1000));
 
-async function doPrank(kind) {
-  if (!actor.on || busy) return;
-  busy = true; setBusy(); moveTarget = null;
-  const x = actor.x, y = actor.y;
-  if (kind === "mess") {
-    say("으랴랴랴!", 0.9);
-    actor.state = "squat"; actor.t = 0;
-    await wait(0.35);
-    const near = state.items.filter((it) => {
-      const def = CATALOG[it.type];
-      if (def.flat) return false;
-      const ix = it.x + it.dx, iy = def.layer === "wall" ? FLOOR.y0 : it.y + it.dy;
-      return Math.abs(ix - x) < 46 + def.s.width / 2 && Math.abs(iy - y) < (def.layer === "wall" ? 30 : 34);
-    });
-    for (const it of near) {
-      const def = CATALOG[it.type];
-      spawn(pow, it.x + it.dx, it.y + it.dy - def.s.height / 2, { text: ["BANG!", "OOPS!", "CRASH!", "POW!"][Math.floor(Math.random() * 4)] });
-      it.dx += Math.round((Math.random() - 0.5) * 30);
-      if (def.layer === "wall") { it.rot = (Math.random() - 0.5) * 1.4; it.dy += Math.round(Math.random() * 10); }
-      else { it.rot = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 1.3); it.dy += Math.round((Math.random() - 0.5) * 8); }
-      { const R = def.layer === "wall" ? WALLR : FLOOR, hw = def.s.width / 2; it.dx = Math.max(R.x0 + hw - it.x, Math.min(R.x1 - hw - it.x, it.dx)); }
-    }
-    if (!near.length) spawn(pow, x, y - 16, { text: "OOPS!" });
-    for (let k = 0; k < 5; k++) {
-      const p = clampFloor(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 26);
-      state.trash.push({ x: Math.round(p.x), y: Math.round(p.y), kind: ["paper", "peel", "can", "sock"][Math.floor(Math.random() * 4)] });
-    }
-    if (!near.length) say("여긴 부술 게 없네", 1.2);
-    await wait(0.3);
-  } else if (kind === "fire") {
-    actor.state = "squat"; actor.t = 0;
-    say("불멍 각이다", 1.1);
-    await wait(0.9);
-    const fx = x + actor.dir * 14;
-    const p = clampFloor(fx, y);
-    spawn(fireRing, p.x, p.y, { reach: 46 });
-    state.fires.push({ x: Math.round(p.x), y: Math.round(p.y), k: Date.now() + Math.random() });
-    syncFires();
-    say("앗 뜨거!", 0.9);
-    await wait(0.3);
-  } else if (kind === "poop") {
-    actor.state = "squat"; actor.t = 0;
-    say("끄응...", 1.3);
-    await wait(1.3);
-    state.poops.push({ x: Math.round(x), y: Math.round(y + 3) });
-    spawn(pow, x, y - 14, { text: "PLOP!" });
-    say("시원하다~", 0.9);
-    await wait(0.3);
+async function doAction(kind, it) {
+  if (!actor.on || busy || !net) return;
+  if (!me.canWrite) { toast("장난치려면 홈피 주인이 공유 메뉴에서 '참여자(Contributor)' 이상으로 초대해야 해요."); return; }
+  busy = true; closeMenu(); moveTarget = null; renderControls();
+  actor.st = "windup"; actor.t = 0;
+  speak(it ? ["으랴!", "흐흐흐", "간다~"][Math.floor(Math.random() * 3)] : kind === "poop" ? "끄응..." : kind === "fart" ? "뿌웅~" : "흐흐", 1);
+  await wait(kind === "poop" ? 1.2 : 0.45);
+  const p = { id: newId(), kind, item: it ? it.id : null, x: Math.round(clampF(actor.x + (kind === "fire" ? actor.dir * 14 : 0), "x")), y: Math.round(actor.y), by: me.id, nick: myNick(), at: Date.now(), seed: Math.floor(Math.random() * 1e9) };
+  pranks.push(p); derive(); playPrank(p);
+  net.addPrank(p).catch(() => toast("장난을 저장하지 못했어요. 권한을 확인해 주세요."));
+  done.push(it ? LOG[kind](CATALOG[it.type].name) : LOG[kind]());
+  await wait(0.25);
+  actor.st = "idle"; busy = false;
+  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+  renderControls();
+}
+
+function finishVisit(caught) {
+  const summary = done.slice(-4).join(", ");
+  const msg = caught ? `${summary} … 도망가다가 딱 걸렸어요 😱` : `${summary} … 그리고 무사히 도망갔어요 🏃`;
+  const e = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg, secret: false, auto: true, at: Date.now(), reply: null };
+  guestbook.unshift(e); renderGuestbook(); renderNews();
+  net.addGuest(e).catch(() => {});
+  heat = null;
+  if (caught) { actor.st = "squat"; busy = true; speak("헉 들켰다...", 2); later(1.5, () => { spawn(poof, actor.x, actor.y + 2); leaveRoom(); }); }
+  else { spawn(poof, DOOR.x, DOOR.y + 4); toast("도망 성공! 방명록에 기록이 남았어요."); leaveRoom(); }
+}
+
+// ---------- friend bots (this browser only): what several people wrecking at once looks like ----------
+const bots = [];
+const BOT_NAMES = ["봇 민지", "봇 동훈", "봇 서연", "봇 태호"];
+let botN = 0;
+function addBots(n = 2) {
+  for (let i = 0; i < n; i++) {
+    const k = botN++;
+    bots.push({ key: "bot" + k, nick: BOT_NAMES[k % 4], look: randomLook(1000 + k * 77 + (Date.now() % 1000)), x: DOOR.x, y: DOOR.y, dir: -1, st: "walk", t: 0, wait: 0.5 + i * 1.2, say: "", sayUntil: 0, left: 3 + Math.floor(Math.random() * 3), target: null });
   }
-  done.push(kind);
-  save(); updateMeter();
-  actor.state = "idle";
-  busy = false; setBusy();
-  startHeat();
-  renderVisit();
+  toast("친구 봇 2명이 들어왔어요. 이 브라우저에서만 보이는 체험용이에요.");
+}
+function botTick(dt) {
+  for (const b of [...bots]) {
+    b.t += dt;
+    if (b.wait > 0) { b.wait -= dt; continue; }
+    if (!b.target) {
+      if (b.left <= 0) { b.target = { x: DOOR.x, y: DOOR.y, exit: true }; b.st = "run"; }
+      else if (Math.random() < 0.7 && D.items.length) {
+        const it = D.items[Math.floor(Math.random() * D.items.length)];
+        const acts = BY_TYPE[it.type] || ["kick"];
+        const def = CATALOG[it.type], bb = itemBase(it), wall = def.layer === "wall" && !it.fallen;
+        b.target = { x: clampF(wall ? bb.x : bb.x + 14, "x"), y: clampF(wall ? FLOOR.y0 + 6 : bb.y + 2, "y"), item: it.id, kind: acts[Math.floor(Math.random() * acts.length)] };
+        b.st = "walk";
+      } else {
+        b.target = { x: clampF(30 + Math.random() * 250, "x"), y: clampF(FLOOR.y0 + 8 + Math.random() * 60, "y"), kind: FREE[Math.floor(Math.random() * FREE.length)].kind };
+        b.st = "walk";
+      }
+    }
+    const t = b.target, ddx = t.x - b.x, ddy = t.y - b.y, d = Math.hypot(ddx, ddy), sp = (b.st === "run" ? 115 : 70) * dt;
+    if (Math.abs(ddx) > 0.5) b.dir = ddx < 0 ? -1 : 1;
+    if (d > sp) { b.x += (ddx / d) * sp; b.y += (ddy / d) * sp; continue; }
+    b.x = t.x; b.y = t.y; b.target = null;
+    if (t.exit) { spawn(poof, DOOR.x, DOOR.y + 4); bots.splice(bots.indexOf(b), 1); continue; }
+    b.st = "windup"; b.t = 0; b.wait = 0.9;
+    b.say = ["ㅋㅋㅋ", "으랴!", "흐흐", "이거나 먹어라"][Math.floor(Math.random() * 4)]; b.sayUntil = Date.now() + 1200;
+    const p = { id: "b" + newId(), kind: t.kind, item: t.item || null, x: Math.round(b.x), y: Math.round(b.y), by: null, nick: b.nick, at: Date.now() + 600, seed: Math.floor(Math.random() * 1e9) };
+    later(0.6, () => { b.st = "idle"; botPranks.push(p); derive(); playPrank(p); });
+    b.left--;
+  }
 }
 
-function cleanUp() {
-  for (const p of state.poops) spawn(poof, p.x, p.y);
-  for (const f of state.fires) spawn(poof, f.x, f.y);
-  spawn(confetti, 160, 196);
-  for (const it of state.items) { it.dx = 0; it.dy = 0; it.rot = 0; it.charred = 0; }
-  state.poops = []; state.fires = []; state.trash = [];
-  syncFires(); save(); updateMeter();
-  toast("싹 치웠어요. 원래대로 돌아왔습니다.");
+// ---------- rendering ----------
+function charOf(it) {
+  let c = 0;
+  const now = Date.now(), b = itemBase(it);
+  for (const f of D.fires) { const d = Math.hypot(b.x - f.x, (b.y - f.y) * 1.6); if (d < 90) c += Math.min(1, (now - f.at) / 12000) * (1 - d / 90); }
+  return Math.min(1, c);
+}
+function drawItem(it) {
+  const def = CATALOG[it.type], s = def.s, f = it.flags;
+  let src = s;
+  const charred = charOf(it);
+  if (charred > 0.01 || Object.keys(f).length) {
+    tmp.width = s.width; tmp.height = s.height;
+    tmpCtx.globalCompositeOperation = "source-over"; tmpCtx.clearRect(0, 0, s.width, s.height); tmpCtx.drawImage(s, 0, 0);
+    tmpCtx.globalCompositeOperation = "source-atop";
+    const tint = (c) => { tmpCtx.fillStyle = c; tmpCtx.fillRect(0, 0, s.width, s.height); };
+    if (f.wilted) tint("rgba(110,96,40,0.55)");
+    if (f.wet) tint("rgba(60,120,200,0.25)");
+    if (f.frozen) { tint("rgba(150,215,255,0.55)"); tmpCtx.fillStyle = "rgba(255,255,255,0.85)"; for (let x = 1; x < s.width; x += 4) tmpCtx.fillRect(x, 0, 1, 2 + (x % 3)); }
+    if (f.sooty) tint("rgba(30,24,30,0.35)");
+    if (charred > 0.01) tint(`rgba(28,18,16,${Math.min(0.88, charred * 0.88)})`);
+    const r = mulberry(hashStr(it.id) + (it.doodleSeed || 0));
+    if (f.slashed) { tmpCtx.fillStyle = "#fffaf3"; for (let k = 0; k < 3; k++) { const x0 = Math.floor(r() * s.width * 0.6), y0 = Math.floor(r() * s.height * 0.5); for (let j = 0; j < Math.min(s.width, s.height) * 0.6; j++) tmpCtx.fillRect(x0 + j, y0 + j, 1, 1); } }
+    if (f.broken) { tmpCtx.fillStyle = "#2d2540"; let x = Math.floor(s.width * (0.3 + r() * 0.4)), y = 0; while (y < s.height) { tmpCtx.fillRect(x, y, 1, 2); y += 2; x += r() < 0.5 ? -1 : 1; } }
+    if (f.doodle) { const cols = ["#e2504e", "#3a8bd8", "#2d2540", "#56b356"]; for (let k = 0; k < 2 + f.doodle; k++) { tmpCtx.fillStyle = cols[k % 4]; let x = r() * s.width, y = r() * s.height; for (let j = 0; j < 14; j++) { tmpCtx.fillRect(Math.round(x), Math.round(y), 1, 1); x += Math.cos(j * 0.9 + k) * 1.4; y += Math.sin(j * 1.3 + k) * 1.1; } } }
+    if (it.type === "tv" && f.broken) { const [sx, sy, sw, sh] = def.screen; for (let yy = 0; yy < sh; yy++) for (let xx = 0; xx < sw; xx += 2) { tmpCtx.fillStyle = Math.random() < 0.5 ? "#d9d9e6" : "#55556a"; tmpCtx.fillRect(sx + xx, sy + yy, 2, 1); } }
+    src = tmp;
+  }
+  const b = itemBase(it);
+  ctx.save();
+  ctx.translate(Math.round(b.x), Math.round(b.y));
+  if (it.rot) ctx.rotate(it.rot);
+  if (it.flip) ctx.scale(-1, 1);
+  ctx.drawImage(src, -Math.round(s.width / 2), -s.height);
+  ctx.restore();
+  const outline = (col, dash) => { ctx.strokeStyle = col; ctx.setLineDash(dash ? [2, 2] : []); ctx.lineWidth = 1; ctx.strokeRect(Math.round(b.x - s.width / 2) - 1.5, Math.round(b.y - s.height) - 1.5, s.width + 3, s.height + 3); ctx.setLineDash([]); };
+  if (decorating && it.id === selectedId) outline("#ff6f91", true);
+  if (!decorating && hoverItem === it.id && actor.on) outline("rgba(255,211,107,0.95)", false);
+}
+function drawPoop(p, now) {
+  ctx.drawImage(POOP, Math.round(p.x - 6), Math.round(p.y - 10));
+  ctx.fillStyle = "rgba(120,170,80,0.8)";
+  for (let i = 0; i < 3; i++) { const ph = (now * 1.2 + i / 3 + p.x * 0.01) % 1; ctx.globalAlpha = 1 - ph; ctx.fillRect(Math.round(p.x - 4 + i * 4 + Math.sin((ph + i) * 6) * 1.5), Math.round(p.y - 12 - ph * 10), 1, 3); }
+  ctx.globalAlpha = 1; ctx.fillStyle = "#2d2540";
+  for (let i = 0; i < 2; i++) { const a = now * (5 + i * 2) + i * 3 + p.x; ctx.fillRect(Math.round(p.x + Math.cos(a) * 8), Math.round(p.y - 12 + Math.sin(a * 1.3) * 4), 2, 1); }
+}
+function drawTrash(t) {
+  const [a, b] = TRASH[t.kind] || TRASH.paper;
+  ctx.fillStyle = a; ctx.fillRect(Math.round(t.x - 2), Math.round(t.y - 3), 4, 3);
+  ctx.fillStyle = b; ctx.fillRect(Math.round(t.x - 2), Math.round(t.y - 1), 4, 1);
+}
+const peerPos = new Map();
+function visiblePeers() { return peers.filter((p) => p.inRoom && typeof p.x === "number"); }
+function render(now) {
+  ctx.drawImage(background(), 0, 0);
+  for (const f of D.fires) { ctx.fillStyle = "rgba(40,24,20,0.3)"; ctx.fillRect(f.x - 20, f.y - 3, 40, 6); }
+  const isWall = (it) => CATALOG[it.type].layer === "wall" && !it.fallen;
+  for (const it of D.items) if (isWall(it)) drawItem(it);
+  for (const it of D.items) if (CATALOG[it.type].flat) drawItem(it);
+  const list = [];
+  for (const it of D.items) if (!isWall(it) && !CATALOG[it.type].flat) list.push([itemBase(it).y, () => drawItem(it)]);
+  for (const t of D.trash) list.push([t.y - 0.5, () => drawTrash(t)]);
+  for (const p of D.poops) list.push([p.y, () => drawPoop(p, now)]);
+  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) list.push([pp.y + 0.05, () => drawMinimi(ctx, pp.x, pp.y, p.look, p.st, now, p.dir)]); }
+  for (const b of bots) list.push([b.y + 0.05, () => drawMinimi(ctx, b.x, b.y, b.look, b.st, b.t, b.dir)]);
+  if (actor.on) list.push([actor.y + 0.1, () => drawMinimi(ctx, actor.x, actor.y, myLook, actor.st, actor.t, actor.dir)]);
+  list.sort((a, b) => a[0] - b[0]).forEach((d) => d[1]());
+  clearFrame(frame);
+  for (const fx of fxList) fx.draw(frame);
+  composite(frame, img.data, null);
+  fxCtx.putImageData(img, 0, 0);
+  ctx.drawImage(fxCanvas, 0, 0);
+  if (heat && actor.on && Math.floor(now * 4) % 2) { ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 2; ctx.strokeRect(279, 43, 32, WALL_BOTTOM - 42); }
+  if (moveTarget && actor.on) { ctx.fillStyle = "rgba(255,111,145,0.7)"; ctx.fillRect(Math.round(moveTarget.x) - 2, Math.round(moveTarget.y) - 1, 5, 2); }
+  canvas.style.transform = shake > 0 ? `translate(${(Math.random() - 0.5) * 6}px, ${(Math.random() - 0.5) * 4}px)` : "";
 }
 
-// ---------- UI wiring ----------
-let mode = "owner";
-let selected = null;
-let hover = null;
+// name tags and speech bubbles over the canvas (DOM keeps Korean crisp)
+const labelBox = $("labels");
+const labelEls = new Map();
+function peerName(p) { return (p.by && names[p.by]) || p.nick || "손님"; }
+function myNick() { return (me.id && names[me.id]) || $("nick").value.trim() || "익명의 손님"; }
+function renderLabels() {
+  const want = [];
+  const nowMs = Date.now();
+  if (actor.on) want.push({ key: "me", x: actor.x, y: actor.y, name: myNick() + " (나)", say: say.until > nowMs ? say.text : "", me: true });
+  for (const p of visiblePeers()) { const pp = peerPos.get(p.key); if (pp) want.push({ key: p.key, x: pp.x, y: pp.y, name: peerName(p), say: p.sayUntil > nowMs ? p.say : "", owner: isHostPeer(p) }); }
+  for (const b of bots) want.push({ key: b.key, x: b.x, y: b.y, name: b.nick, say: b.sayUntil > nowMs ? b.say : "" });
+  const seen = new Set();
+  for (const w of want) {
+    seen.add(w.key);
+    let el = labelEls.get(w.key);
+    if (!el) { el = document.createElement("div"); el.className = "tag-wrap"; el.innerHTML = '<div class="bub"></div><div class="nm"></div>'; labelBox.append(el); labelEls.set(w.key, el); }
+    el.style.left = `${(w.x / W) * 100}%`; el.style.top = `${((w.y - 25) / H) * 100}%`;
+    el.querySelector(".nm").textContent = w.name;
+    el.classList.toggle("me", !!w.me); el.classList.toggle("owner", !!w.owner);
+    const bub = el.querySelector(".bub"); bub.textContent = w.say; bub.hidden = !w.say;
+  }
+  for (const [k, el] of labelEls) if (!seen.has(k)) { el.remove(); labelEls.delete(k); }
+}
+
+// ---------- loop ----------
+let last = performance.now();
+let presTimer = 0;
+function tick(nowMs) {
+  const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
+  const now = nowMs / 1000;
+  if (actor.on) {
+    actor.t += dt;
+    if (activeTab === "home") moveActor(dt);
+    if (heat && !busy) {
+      heat.left -= dt; $("timerNum").textContent = Math.max(0, heat.left).toFixed(1);
+      if (heat.left <= 0) finishVisit(true);
+      else if (room.ownerId && role === "visitor") {
+        const o = visiblePeers().find(isHostPeer);
+        const pp = o && peerPos.get(o.key);
+        if (pp && Math.hypot(pp.x - actor.x, pp.y - actor.y) < 10) finishVisit(true);
+      }
+    }
+  }
+  for (const p of visiblePeers()) {
+    let pp = peerPos.get(p.key);
+    if (!pp) { pp = { x: p.x, y: p.y }; peerPos.set(p.key, pp); }
+    pp.x += (p.x - pp.x) * Math.min(1, dt * 12); pp.y += (p.y - pp.y) * Math.min(1, dt * 12);
+  }
+  botTick(dt);
+  placePersistent(now);
+  for (const fx of fxList) fx.update(dt);
+  fxList = fxList.filter((fx) => !fx.done());
+  if (shake > 0) shake -= dt;
+  presTimer += dt;
+  if (presTimer > 0.1) { presTimer = 0; pushPresence(); }
+  render(now);
+  renderLabels();
+  $("timer").hidden = !(heat && actor.on);
+  requestAnimationFrame(tick);
+}
+let lastPres = "";
+// the owner, walking in their own room as the owner (an owner testing as a visitor does not catch anyone)
+function isHostPeer(p) { return !!(room.ownerId && p.by === room.ownerId && p.host); }
+function pushPresence(force) {
+  if (!net) return;
+  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner };
+  const s = JSON.stringify(p);
+  if (s !== lastPres || force) { lastPres = s; net.presence(p); }
+}
+
+// ---------- input ----------
+let decorating = false;
+let selectedId = null;
 let drag = null;
-const $ = (id) => document.getElementById(id);
-
-function toCanvas(e) {
-  const r = canvas.getBoundingClientRect();
-  return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
-}
+let hoverItem = null;
+function toCanvas(e) { const r = canvas.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; }
 function hit(p) {
-  const order = [...state.items].sort((a, b) => {
-    const la = CATALOG[a.type].layer === "wall" ? 0 : CATALOG[a.type].flat ? 1 : 2;
-    const lb = CATALOG[b.type].layer === "wall" ? 0 : CATALOG[b.type].flat ? 1 : 2;
-    return la - lb || a.y - b.y;
+  const order = [...D.items].sort((a, b) => {
+    const l = (i) => (CATALOG[i.type].layer === "wall" && !i.fallen ? 0 : CATALOG[i.type].flat ? 1 : 2);
+    return l(a) - l(b) || itemBase(a).y - itemBase(b).y;
   }).reverse();
-  return order.find((it) => {
-    const s = CATALOG[it.type].s, x = it.x + it.dx, y = it.y + it.dy;
-    return p.x >= x - s.width / 2 && p.x <= x + s.width / 2 && p.y >= y - s.height && p.y <= y;
-  });
+  return order.find((it) => { const s = CATALOG[it.type].s, b = itemBase(it); return p.x >= b.x - s.width / 2 - 2 && p.x <= b.x + s.width / 2 + 2 && p.y >= b.y - s.height - 2 && p.y <= b.y + 2; });
 }
-
 canvas.addEventListener("pointerdown", (e) => {
   const p = toCanvas(e);
-  if (mode === "visitor") {
-    if (!actor.on || busy) return;
-    moveTarget = clampFloor(p.x, Math.max(p.y, FLOOR.y0));
+  if (decorating) {
+    if (!me.isOwner) return;
+    const h = hit(p);
+    const it = h && (room.items || []).find((i) => i.id === h.id);
+    selectedId = it ? it.id : null; renderDecor();
+    if (it) { drag = { it, ox: p.x - it.x, oy: p.y - it.y }; canvas.setPointerCapture(e.pointerId); }
     return;
   }
+  if (!actor.on) return;   // taps during an action are kept: the walk starts when it ends
+  closeMenu();
   const it = hit(p);
-  selected = it || null;
-  updateSelection();
-  if (it) { drag = { it, ox: p.x - it.x, oy: p.y - it.y }; canvas.setPointerCapture(e.pointerId); }
+  if (it) { pendingItem = it.id; moveTarget = approach(it); return; }
+  moveTarget = { x: clampF(p.x, "x"), y: clampF(Math.max(p.y, FLOOR.y0), "y") };
 });
 canvas.addEventListener("pointermove", (e) => {
   const p = toCanvas(e);
-  hover = p;
+  hoverItem = decorating ? null : hit(p)?.id || null;
   if (!drag) return;
   const def = CATALOG[drag.it.type], R = def.layer === "wall" ? WALLR : FLOOR;
   drag.it.x = Math.round(Math.max(R.x0 + def.s.width / 2, Math.min(R.x1 - def.s.width / 2, p.x - drag.ox)));
   drag.it.y = Math.round(Math.max(R.y0 + (def.layer === "wall" ? def.s.height : 0), Math.min(R.y1, p.y - drag.oy)));
+  derive();
 });
-canvas.addEventListener("pointerup", () => { if (drag) { drag = null; save(); } });
-canvas.addEventListener("pointerleave", () => (hover = null));
+canvas.addEventListener("pointerup", () => { if (drag) { drag = null; saveRoomSoon(); } });
+canvas.addEventListener("pointerleave", () => (hoverItem = null));
 
-function addItem(type) {
-  const def = CATALOG[type];
-  const it = def.layer === "wall" ? item(type, 120 + Math.random() * 80, 70) : item(type, 140 + Math.random() * 40, 175);
-  state.items.push(it); selected = it; save(); updateSelection();
-}
-function removeSelected() {
-  if (!selected) return;
-  state.items = state.items.filter((i) => i !== selected);
-  selected = null; save(); updateSelection();
-}
+const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", A: "left", D: "right", W: "up", S: "down" };
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, textarea, select")) return;
-  if ((e.key === "Delete" || e.key === "Backspace") && mode === "owner") removeSelected();
-  if (mode !== "visitor") return;
+  if (decorating && (e.key === "Delete" || e.key === "Backspace")) { removeSelected(); return; }
+  if (activeTab !== "home" || !actor.on) return;
   const k = KEYMAP[e.key];
-  if (k) { keys.add(k); e.preventDefault(); }
-  if (e.key === "1") doPrank("mess");
-  if (e.key === "2") doPrank("fire");
-  if (e.key === "3") doPrank("poop");
+  if (k) { keys.add(k); e.preventDefault(); return; }
+  const f = FREE.find((x) => x.key === e.key);
+  if (f) { doAction(f.kind, null); return; }
+  if (e.key === "e" || e.key === "E") { const it = nearestItem(); if (it) openMenu(it); else toast("가구 가까이 가서 E를 눌러 주세요."); }
+  if (e.key === "Escape") closeMenu();
 });
-const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", a: "left", d: "right", w: "up", s: "down", A: "left", D: "right", W: "up", S: "down" };
 document.addEventListener("keyup", (e) => { const k = KEYMAP[e.key]; if (k) keys.delete(k); });
-window.addEventListener("blur", () => keys.clear());
-
-function updateSelection() {
-  $("removeBtn").disabled = !selected;
-  $("selName").textContent = selected ? `선택: ${CATALOG[selected.type].name}` : "가구를 눌러서 고르고, 끌어서 옮기세요.";
-}
-
-const visitorHint = "방향키(WASD)나 바닥 터치로 움직이고, 장난 버튼(1·2·3)은 서 있는 자리에서 써요. 장난 후엔 문으로 도망!";
-const ownerHint = "아래 가구를 눌러 방에 놓고, 끌어서 옮기세요.";
-function renderVisit() {
-  const inRoom = actor.on;
-  document.querySelectorAll("[data-prank]").forEach((b) => (b.disabled = busy || !inRoom));
-  $("reenterBtn").hidden = inRoom || mode !== "visitor";
-  $("timer").hidden = !(heat && inRoom);
-  $("pad").hidden = !(inRoom && mode === "visitor");
-}
-function setBusy() {
-  renderVisit();
-  $("modeOwner").disabled = busy;
-}
-
-function setMode(m) {
-  if (busy) return;
-  mode = m;
-  if (m === "owner") { actor.on = false; heat = null; keys.clear(); moveTarget = null; }
-  selected = null; updateSelection();
-  $("ownerTools").hidden = m !== "owner";
-  $("visitorTools").hidden = m !== "visitor";
-  $("modeOwner").setAttribute("aria-pressed", String(m === "owner"));
-  $("modeVisitor").setAttribute("aria-pressed", String(m === "visitor"));
-  document.body.dataset.mode = m;
-  $("hint").textContent = m === "visitor" ? visitorHint : ownerHint;
-  if (m === "visitor") {
-    state.visits.today++; state.visits.total++; save(); renderCounter();
-    toast(`${state.owner}님의 홈피에 놀러 왔어요. 방문자 수가 올라갔습니다.`);
-    bgm.play(state.bgm); renderBgm();
-    enter();
+addEventListener("blur", () => keys.clear());
+function nearestItem() {
+  let best = null, bd = 34;
+  for (const it of D.items) {
+    const b = itemBase(it), wall = CATALOG[it.type].layer === "wall" && !it.fallen;
+    const d = wall ? Math.abs(b.x - actor.x) + Math.max(0, actor.y - FLOOR.y0 - 14) : Math.hypot(b.x - actor.x, (b.y - actor.y) * 1.3) - CATALOG[it.type].s.width / 3;
+    if (d < bd) { bd = d; best = it; }
   }
-  renderVisit();
+  return best;
+}
+document.querySelectorAll("[data-dir]").forEach((b) => {
+  const k = b.dataset.dir;
+  b.addEventListener("pointerdown", (e) => { e.preventDefault(); keys.add(k); b.setPointerCapture?.(e.pointerId); });
+  const off = () => keys.delete(k);
+  b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("lostpointercapture", off);
+});
+
+// item action menu
+const menu = $("menu");
+function openMenu(it) {
+  const def = CATALOG[it.type], b = itemBase(it);
+  menu.replaceChildren();
+  const h = document.createElement("div"); h.className = "menu-h"; h.textContent = def.name; menu.append(h);
+  for (const a of BY_TYPE[it.type] || ["kick"]) {
+    const btn = document.createElement("button"); btn.type = "button";
+    btn.textContent = `${ACTIONS[a].ico} ${ACTIONS[a].label}`;
+    btn.addEventListener("click", () => doAction(a, it));
+    menu.append(btn);
+  }
+  menu.style.left = `${Math.min(70, Math.max(1, (b.x / W) * 100 - 12))}%`;
+  menu.style.top = `${Math.min(55, Math.max(2, ((b.y - def.s.height) / H) * 100 - 28))}%`;
+  menu.hidden = false;
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+function closeMenu() { menu.hidden = true; }
+
+// ---------- decorating (owner, 미니룸 tab) ----------
+let saveTimer = null;
+function cleanRoom() { return JSON.parse(JSON.stringify({ ...room, ownerId: room.ownerId || me.id })); }
+function saveRoomSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { if (me.isOwner) net?.saveRoom(cleanRoom()).catch(() => toast("방을 저장하지 못했어요.")); }, 500);
+}
+function addItem(type) {
+  const def = CATALOG[type];
+  const it = def.layer === "wall" ? { id: newId(), type, x: Math.round(120 + Math.random() * 80), y: 70 } : { id: newId(), type, x: Math.round(140 + Math.random() * 40), y: 176 };
+  room.items = [...(room.items || []), it]; selectedId = it.id; derive(); renderDecor(); saveRoomSoon();
+}
+function removeSelected() { if (!selectedId) return; room.items = room.items.filter((i) => i.id !== selectedId); selectedId = null; derive(); renderDecor(); saveRoomSoon(); }
+function flipSelected() { const it = room.items.find((i) => i.id === selectedId); if (it) { it.flip = !it.flip; derive(); saveRoomSoon(); } }
+function renderDecor() {
+  $("removeBtn").disabled = !selectedId; $("flipBtn").disabled = !selectedId;
+  const it = room.items?.find((i) => i.id === selectedId);
+  $("selName").textContent = it ? `선택: ${CATALOG[it.type].name}` : "가구를 눌러 고르고, 끌어서 옮기세요.";
+  document.querySelectorAll("[data-wall]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.wall === room.wall)));
+  document.querySelectorAll("[data-floor]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.floor === room.floor)));
+}
+function cleanUp() {
+  for (const p of D.poops) spawn(poof, p.x, p.y);
+  for (const f of D.fires) spawn(poof, f.x, f.y);
+  spawn(confetti, 160, 196);
+  const old = pranks.map((p) => p.id);
+  room.cleanedAt = Date.now(); botPranks = [];
+  derive(); saveRoomSoon();
+  if (me.isOwner) net?.prunePranks(old).catch(() => {});
+  toast("싹 치웠어요. 원래대로 돌아왔습니다.");
 }
 
-// ---------- counter, meter, guestbook ----------
-function renderCounter() { $("today").textContent = state.visits.today; $("total").textContent = state.visits.total; }
+// ---------- tabs ----------
+let activeTab = "home";
+const stage = $("stage");
+function setTab(t) {
+  activeTab = t;
+  document.querySelectorAll(".tabview").forEach((v) => (v.hidden = v.dataset.tab !== t));
+  document.querySelectorAll("[data-tabbtn]").forEach((b) => b.setAttribute("aria-current", b.dataset.tabbtn === t ? "page" : "false"));
+  decorating = t === "room";
+  if (t === "home") $("slotHome").append(stage);
+  if (t === "room") $("slotRoom").append(stage);
+  if (decorating) { closeMenu(); keys.clear(); moveTarget = null; }
+  selectedId = null; renderDecor(); renderControls();
+  if (t === "minimi") { draftLook = { ...myLook }; renderCustomizer(); }
+}
+document.querySelectorAll("[data-tabbtn]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tabbtn)));
+
+// ---------- controls ----------
+function renderControls() {
+  $("enterBtn").hidden = actor.on;
+  $("enterBtn").textContent = role === "owner" ? "내 방에 들어가기" : "놀러 들어가기";
+  $("leaveBtn").hidden = !actor.on;
+  document.querySelectorAll("[data-free]").forEach((b) => (b.disabled = !actor.on || busy));
+  $("pad").hidden = !(actor.on && activeTab === "home");
+  $("roleRow").hidden = !me.isOwner;
+  $("roleOwner").setAttribute("aria-pressed", String(role === "owner"));
+  $("roleVisitor").setAttribute("aria-pressed", String(role === "visitor"));
+  $("decorLock").hidden = me.isOwner;
+  $("decorTools").hidden = !me.isOwner;
+  $("cleanBtn").hidden = !me.isOwner;
+}
+$("enterBtn").addEventListener("click", enterRoom);
+$("leaveBtn").addEventListener("click", () => { if (heat) { toast("문까지 직접 도망가야 해요!"); return; } spawn(poof, actor.x, actor.y); leaveRoom(); });
+$("roleOwner").addEventListener("click", () => { role = "owner"; heat = null; renderControls(); });
+$("roleVisitor").addEventListener("click", () => { role = "visitor"; renderControls(); });
+$("botBtn").addEventListener("click", () => addBots(2));
+$("removeBtn").addEventListener("click", removeSelected);
+$("flipBtn").addEventListener("click", flipSelected);
+$("cleanBtn").addEventListener("click", cleanUp);
+const freeBox = $("freeActions");
+for (const f of FREE) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "act"; b.dataset.free = f.kind;
+  b.innerHTML = `<span class="ico" aria-hidden="true">${f.ico}</span><b></b><small>${f.key}</small>`;
+  b.querySelector("b").textContent = f.label;
+  b.addEventListener("click", () => doAction(f.kind, null));
+  freeBox.append(b);
+}
+const shop = $("shop");
+for (const [type, def] of Object.entries(CATALOG)) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "pal";
+  const c = document.createElement("canvas"); c.width = def.s.width; c.height = def.s.height; c.getContext("2d").drawImage(def.s, 0, 0);
+  const l = document.createElement("span"); l.textContent = def.name;
+  b.append(c, l); b.addEventListener("click", () => addItem(type)); shop.append(b);
+}
+for (const [k, w] of Object.entries(WALLS)) { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.wall = k; b.textContent = w.name; b.addEventListener("click", () => { room.wall = k; renderDecor(); saveRoomSoon(); }); $("walls").append(b); }
+for (const [k, f] of Object.entries(FLOORS)) { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.floor = k; b.textContent = f.name; b.addEventListener("click", () => { room.floor = k; renderDecor(); saveRoomSoon(); }); $("floors").append(b); }
+
+// ---------- profile (left page) ----------
+const ownerMini = $("ownerMini").getContext("2d");
+ownerMini.imageSmoothingEnabled = false;
+function ownerLook() { return (room.ownerId && minimiMap[room.ownerId]) || (me.isOwner ? myLook : DEFAULT_LOOK); }
+function drawPortrait(t) {
+  ownerMini.fillStyle = "#fdeef4"; ownerMini.fillRect(0, 0, 40, 40);
+  drawMinimi(ownerMini, 20, 37 - (Math.floor(t * 2) % 2), ownerLook(), "idle", t, 1, 1);
+}
+function renderProfile() {
+  $("mood").value = room.mood || "들뜸"; $("intro").value = room.intro || ""; $("hpTitle").textContent = room.title || "";
+  $("titleInput").value = room.title || "";
+  const on = me.isOwner; $("mood").disabled = !on; $("intro").readOnly = !on; $("titleRow").hidden = !on;
+  $("ownerName").textContent = (room.ownerId && names[room.ownerId]) || room.ownerNick || "주인";
+}
+$("mood").addEventListener("change", (e) => { room.mood = e.target.value; saveRoomSoon(); });
+$("intro").addEventListener("change", (e) => { room.intro = e.target.value.slice(0, 80); saveRoomSoon(); });
+$("titleInput").addEventListener("change", (e) => { room.title = e.target.value.slice(0, 40); renderProfile(); saveRoomSoon(); });
+
+function renderWho() {
+  const ul = $("who"); ul.replaceChildren();
+  const rows = [];
+  if (actor.on) rows.push(`${myNick()} (나)${role === "owner" && me.isOwner ? " · 주인" : ""}${heat ? " · 도망 중" : ""}`);
+  for (const p of visiblePeers()) rows.push(`${peerName(p)}${isHostPeer(p) ? " · 주인" : ""}${p.wanted ? " · 도망 중" : ""}`);
+  for (const b of bots) rows.push(`${b.nick} · 체험용`);
+  for (const r of rows) { const li = document.createElement("li"); li.textContent = r; ul.append(li); }
+  if (!rows.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "지금은 아무도 없어요"; ul.append(li); }
+  $("whoCount").textContent = rows.length;
+}
+
+// ---------- counter / meter ----------
+function renderCounter() {
+  const t = today();
+  $("today").textContent = visits.filter((v) => v.date === t).length;
+  $("total").textContent = visits.length;
+}
 function messScore() {
-  const knocked = state.items.filter((i) => i.rot || i.dx || i.dy).length;
-  const char = state.items.reduce((a, i) => a + i.charred, 0);
-  return Math.min(100, Math.round(knocked * 7 + state.trash.length * 1 + state.poops.length * 14 + state.fires.length * 18 + char * 6));
+  let s = 0;
+  for (const it of D.items) s += (it.rot || it.dx ? 6 : 0) + Object.keys(it.flags).length * 6 + charOf(it) * 6 + (it.fallen ? 6 : 0);
+  s += D.trash.length + D.poops.length * 12 + D.fires.length * 14 + D.critters.length * 10 + D.ghosts.length * 8;
+  return Math.min(100, Math.round(s));
 }
 function updateMeter() {
   const s = messScore();
-  $("meterFill").style.width = `${s}%`;
-  $("meterNum").textContent = s;
+  $("meterFill").style.width = `${s}%`; $("meterNum").textContent = s;
   $("meterLabel").textContent = s === 0 ? "반짝반짝" : s < 25 ? "살짝 지저분" : s < 50 ? "누가 다녀감" : s < 80 ? "난장판" : "폐허";
-  $("cleanBtn").disabled = s === 0;
 }
-function fmt(t) {
-  const d = new Date(t);
-  return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+setInterval(updateMeter, 2000);
+
+// ---------- guestbook: number, name, date, minimi box, text, secret posts, owner reply ----------
+function fmt(t) { const d = new Date(t); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
+function miniCanvas(look, size = 48) {
+  const c = document.createElement("canvas"); c.width = 24; c.height = 26; c.className = "gb-mini";
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  drawMinimi(g, 12, 25, look || DEFAULT_LOOK, "idle", 0, 1, 1);
+  c.style.width = size + "px"; c.style.height = Math.round(size * 26 / 24) + "px";
+  return c;
 }
+function entryName(g) { return (g.by && names[g.by]) || g.nick || "손님"; }
 function renderGuestbook() {
-  const ul = $("gbList");
-  ul.replaceChildren();
-  for (const g of state.guestbook.slice(0, 40)) {
-    const li = document.createElement("li");
-    if (g.auto) li.className = "auto";
+  const ul = $("gbList"); ul.replaceChildren();
+  const n = guestbook.length;
+  guestbook.slice(0, 60).forEach((g, i) => {
+    const li = document.createElement("li"); li.className = "gb" + (g.auto ? " auto" : "") + (g.secret ? " secret" : "");
     const head = document.createElement("div"); head.className = "gb-head";
-    const n = document.createElement("b"); n.textContent = g.name;
-    const tm = document.createElement("time"); tm.textContent = fmt(g.at);
-    head.append(n, tm);
-    if (g.auto) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "장난 기록"; head.append(tag); }
-    const p = document.createElement("p"); p.textContent = g.msg;
-    li.append(head, p);
+    const no = document.createElement("span"); no.className = "no"; no.textContent = `No.${n - i}`;
+    const nm = document.createElement("b"); nm.textContent = entryName(g);
+    const tm = document.createElement("time"); tm.textContent = `(${fmt(g.at)})`;
+    head.append(no, nm, tm);
+    if (g.auto) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "장난 기록"; head.append(t); }
+    if (g.secret) { const t = document.createElement("span"); t.className = "tag lock"; t.textContent = "비밀글"; head.append(t); }
+    const tools = document.createElement("span"); tools.className = "gb-tools";
+    if (me.isOwner) {
+      const rep = document.createElement("button"); rep.type = "button"; rep.textContent = "답글"; rep.addEventListener("click", () => replyBox(li, g)); tools.append(rep);
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "삭제"; del.addEventListener("click", () => confirmDelete(tools, g)); tools.append(del);
+    }
+    head.append(tools);
+    const body = document.createElement("div"); body.className = "gb-body";
+    const box = document.createElement("div"); box.className = "gb-minibox"; box.append(miniCanvas((g.by && minimiMap[g.by]) || g.look));
+    const p = document.createElement("p");
+    if (g.secret) { const text = secrets[g.id]; p.textContent = text != null ? text : "비밀글입니다. 홈피 주인과 쓴 사람만 볼 수 있어요."; if (text == null) p.className = "muted"; }
+    else p.textContent = g.msg;
+    body.append(box, p);
+    li.append(head, body);
+    if (g.reply && g.reply.msg) {
+      const r = document.createElement("div"); r.className = "gb-reply";
+      const who = document.createElement("b"); who.textContent = `ㄴ ${$("ownerName").textContent}`;
+      const t = document.createElement("span"); t.textContent = ` ${g.reply.msg}`;
+      const rt = document.createElement("time"); rt.textContent = ` (${fmt(g.reply.at)})`;
+      r.append(who, t, rt); li.append(r);
+    }
     ul.append(li);
-  }
-  $("gbCount").textContent = state.guestbook.length;
+  });
+  $("gbCount").textContent = n;
+  $("gbMe").replaceChildren(miniCanvas(myLook, 56));
+}
+function replyBox(li, g) {
+  if (li.querySelector(".gb-replyform")) return;
+  const f = document.createElement("form"); f.className = "gb-replyform";
+  const inp = document.createElement("input"); inp.maxLength = 100; inp.placeholder = "답글 남기기"; inp.value = g.reply?.msg || ""; inp.setAttribute("aria-label", "답글");
+  const ok = document.createElement("button"); ok.className = "btn small"; ok.textContent = "확인";
+  f.append(inp, ok); li.append(f); inp.focus();
+  f.addEventListener("submit", (e) => { e.preventDefault(); const msg = inp.value.trim(); g.reply = msg ? { msg, at: Date.now() } : null; net.updateGuest(g.id, { reply: g.reply }).catch(() => {}); renderGuestbook(); });
+}
+function confirmDelete(tools, g) {
+  tools.replaceChildren();
+  const y = document.createElement("button"); y.type = "button"; y.textContent = "정말 삭제"; y.className = "danger";
+  const n = document.createElement("button"); n.type = "button"; n.textContent = "취소";
+  y.addEventListener("click", () => { guestbook = guestbook.filter((x) => x.id !== g.id); net.deleteGuest(g.id).catch(() => {}); renderGuestbook(); renderNews(); });
+  n.addEventListener("click", renderGuestbook);
+  tools.append(y, n);
 }
 $("gbForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const msg = $("gbMsg").value.trim();
   if (!msg) { $("gbMsg").focus(); return; }
-  const name = $("gbName").value.trim() || (mode === "visitor" ? visitorName() : state.owner);
-  state.guestbook.unshift({ name, msg, at: Date.now(), auto: false });
-  $("gbMsg").value = ""; save(); renderGuestbook();
+  if (!net) return;
+  if (!me.canWrite) { toast("방명록을 쓰려면 홈피 주인이 공유 메뉴에서 '참여자' 이상으로 초대해야 해요."); return; }
+  const secret = $("gbSecret").checked;
+  const ent = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg: secret ? "" : msg, secret, auto: false, at: Date.now(), reply: null };
+  if (secret) secrets[ent.id] = msg;
+  guestbook.unshift(ent); renderGuestbook(); renderNews();
+  net.addGuest(ent, secret ? msg : null).catch(() => toast("방명록을 저장하지 못했어요."));
+  $("gbMsg").value = ""; $("gbSecret").checked = false;
 });
-
-// ---------- profile ----------
-$("ownerName").value = state.owner;
-$("mood").value = state.mood;
-$("intro").value = state.intro;
-$("ownerName").addEventListener("change", (e) => { state.owner = e.target.value.trim() || "주인"; save(); });
-$("mood").addEventListener("change", (e) => { state.mood = e.target.value; save(); });
-$("intro").addEventListener("change", (e) => { state.intro = e.target.value; save(); });
-const mini = $("minime").getContext("2d");
-mini.imageSmoothingEnabled = false;
-function drawMinime(t) {
-  mini.clearRect(0, 0, 32, 32);
-  mini.save(); mini.scale(1, 1);
-  drawActor(mini, 16, 29 - (Math.floor(t * 2) % 2), "idle", t, "#ff6f91", 1);
-  mini.restore();
+function renderNews() {
+  const ul = $("news"); ul.replaceChildren();
+  for (const g of guestbook.slice(0, 5)) {
+    const li = document.createElement("li");
+    const b = document.createElement("b"); b.textContent = entryName(g);
+    const s = document.createElement("span"); s.textContent = g.secret ? "비밀글을 남겼어요" : g.msg;
+    const t = document.createElement("time"); t.textContent = fmt(g.at).slice(5);
+    li.append(b, s, t); ul.append(li);
+  }
+  if (!guestbook.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "아직 아무도 다녀가지 않았어요."; ul.append(li); }
 }
 
-// ---------- BGM ----------
+// ---------- minimi customizer ----------
+let draftLook = null;
+function renderCustomizer() {
+  if (!draftLook) draftLook = { ...myLook };
+  const box = $("custom"); box.replaceChildren();
+  for (const [k, opt] of Object.entries(LOOK_OPTIONS)) {
+    const row = document.createElement("div"); row.className = "c-row";
+    const lab = document.createElement("span"); lab.className = "label"; lab.textContent = opt.label; row.append(lab);
+    const vals = document.createElement("div"); vals.className = "c-vals";
+    opt.values.forEach((v, i) => {
+      const b = document.createElement("button"); b.type = "button";
+      const isColor = v.startsWith("#");
+      b.className = isColor ? "sw" : "chip";
+      if (isColor) { b.style.background = v; b.setAttribute("aria-label", `${opt.label} ${i + 1}`); } else b.textContent = v;
+      b.setAttribute("aria-pressed", String((draftLook[k] | 0) === i));
+      b.addEventListener("click", () => { draftLook[k] = i; renderCustomizer(); });
+      vals.append(b);
+    });
+    row.append(vals); box.append(row);
+  }
+}
+const preview = $("preview").getContext("2d");
+preview.imageSmoothingEnabled = false;
+function drawPreview(t) {
+  preview.clearRect(0, 0, 32, 32);
+  drawMinimi(preview, 16, 30, draftLook || myLook, Math.floor(t / 2) % 2 ? "walk" : "idle", t, 1, 1);
+}
+$("saveLook").addEventListener("click", () => {
+  myLook = { ...draftLook }; if (me.id) minimiMap[me.id] = myLook;
+  net?.saveMinimi(myLook).catch(() => {});
+  try { localStorage.setItem("phyco-look", JSON.stringify(myLook)); } catch {}
+  toast("미니미를 저장했어요. 방명록과 미니룸에 바로 보여요."); renderGuestbook(); pushPresence(true);
+});
+$("randomLook").addEventListener("click", () => { draftLook = randomLook(Date.now()); renderCustomizer(); });
+
+// ---------- BGM (jukebox) ----------
 const bgm = new Bgm();
-let browse = state.bgm;
+let browse = 0;
 function renderBgm() {
   $("songTitle").textContent = SONGS[browse].title;
-  $("songMeta").textContent = browse === state.bgm ? "우리집 BGM" : `${SONGS[browse].bpm} BPM`;
-  $("playBtn").textContent = bgm.playing ? "정지" : "재생";
-  $("playBtn").setAttribute("aria-pressed", String(bgm.playing));
-  $("setBgmBtn").disabled = browse === state.bgm;
+  $("songMeta").textContent = browse === (room.bgm | 0) ? "우리집 BGM" : `${SONGS[browse].bpm} BPM`;
+  $("playBtn").textContent = bgm.playing ? "■" : "▶";
+  $("playBtn").setAttribute("aria-label", bgm.playing ? "정지" : "재생");
   $("eq").classList.toggle("on", bgm.playing);
+  const ul = $("songs"); ul.replaceChildren();
+  SONGS.forEach((s, i) => {
+    const li = document.createElement("li");
+    const play = document.createElement("button"); play.type = "button"; play.className = "chip"; play.textContent = bgm.playing && browse === i ? "■ 정지" : "▶ 듣기";
+    play.addEventListener("click", () => { if (bgm.playing && browse === i) bgm.stop(); else { browse = i; bgm.play(i); } renderBgm(); });
+    const t = document.createElement("span"); t.className = "song-t"; t.textContent = `${i + 1}. ${s.title}`;
+    const m = document.createElement("small"); m.textContent = `${s.bpm} BPM`;
+    li.append(play, t, m);
+    if (me.isOwner) {
+      const set = document.createElement("button"); set.type = "button"; set.className = "chip"; set.textContent = (room.bgm | 0) === i ? "우리집 BGM" : "배경음악으로";
+      set.disabled = (room.bgm | 0) === i;
+      set.addEventListener("click", () => { room.bgm = i; saveRoomSoon(); renderBgm(); toast(`배경음악을 "${s.title}"(으)로 바꿨어요.`); });
+      li.append(set);
+    } else if ((room.bgm | 0) === i) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "배경음악"; li.append(tag); }
+    ul.append(li);
+  });
 }
 $("playBtn").addEventListener("click", () => { bgm.playing ? bgm.stop() : bgm.play(browse); renderBgm(); });
 $("prevBtn").addEventListener("click", () => { browse = (browse + SONGS.length - 1) % SONGS.length; if (bgm.playing) bgm.play(browse); renderBgm(); });
 $("nextBtn").addEventListener("click", () => { browse = (browse + 1) % SONGS.length; if (bgm.playing) bgm.play(browse); renderBgm(); });
-$("setBgmBtn").addEventListener("click", () => { state.bgm = browse; save(); renderBgm(); toast(`우리집 BGM을 "${SONGS[browse].title}"(으)로 바꿨어요.`); });
 
 // ---------- misc ----------
 let toastTimer;
-function toast(t) {
-  const el = $("toast"); el.textContent = t; el.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2600);
+function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 3000); }
+function renderNet() {
+  const n = visiblePeers().length + (actor.on ? 1 : 0) + bots.length;
+  $("netBadge").textContent = !net ? "연결 중…" : net.mode === "live" ? `실시간 · 방 안 ${n}명` : `혼자 보기 · 같은 브라우저 탭끼리 연결 · 방 안 ${n}명`;
+  $("netBadge").classList.toggle("live", net?.mode === "live");
 }
-$("modeOwner").addEventListener("click", () => setMode("owner"));
-$("modeVisitor").addEventListener("click", () => setMode("visitor"));
-$("removeBtn").addEventListener("click", removeSelected);
-$("cleanBtn").addEventListener("click", cleanUp);
-$("resetBtn").addEventListener("click", () => {
-  if (busy) return;
-  state = sampleState(); uid = 100; syncFires(); save();
-  renderAll(); toast("예시 방으로 되돌렸어요.");
-});
-document.querySelectorAll("[data-prank]").forEach((b) => b.addEventListener("click", () => doPrank(b.dataset.prank)));
-$("reenterBtn").addEventListener("click", () => { if (mode === "visitor" && !actor.on) { state.visits.today++; state.visits.total++; save(); renderCounter(); enter(); } });
-document.querySelectorAll("[data-dir]").forEach((b) => {
-  const k = b.dataset.dir;
-  const on = (e) => { e.preventDefault(); keys.add(k); b.setPointerCapture?.(e.pointerId); };
-  const off = () => keys.delete(k);
-  b.addEventListener("pointerdown", on);
-  b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("lostpointercapture", off);
-});
-const pal = $("palette");
-for (const [type, def] of Object.entries(CATALOG)) {
-  const b = document.createElement("button");
-  b.type = "button"; b.className = "pal";
-  const c = document.createElement("canvas");
-  const sc = Math.max(1, Math.floor(Math.min(36 / def.s.width, 36 / def.s.height) * 2) / 2);
-  c.width = def.s.width; c.height = def.s.height;
-  c.getContext("2d").drawImage(def.s, 0, 0);
-  c.style.width = `${def.s.width * Math.min(1, sc)}px`;
-  const l = document.createElement("span"); l.textContent = def.name;
-  b.append(c, l);
-  b.addEventListener("click", () => addItem(type));
-  pal.append(b);
+setInterval(() => { renderWho(); renderNet(); }, 500);
+
+let namesBusy = false;
+async function resolveNames() {
+  if (!net || namesBusy) return;
+  namesBusy = true;
+  try {
+    const ids = new Set();
+    if (room.ownerId) ids.add(room.ownerId);
+    if (me.id) ids.add(me.id);
+    guestbook.forEach((g) => g.by && ids.add(g.by));
+    peers.forEach((p) => p.by && ids.add(p.by));
+    const got = await net.names([...ids]);
+    let changed = false;
+    for (const [k, v] of Object.entries(got)) if (v && names[k] !== v) { names[k] = v; changed = true; }
+    if (changed) { renderGuestbook(); renderNews(); renderProfile(); }
+  } finally { namesBusy = false; }
 }
 
-function renderAll() { renderCounter(); renderGuestbook(); updateMeter(); updateSelection(); renderBgm();
-  $("ownerName").value = state.owner; $("mood").value = state.mood; $("intro").value = state.intro; }
-renderAll();
-setMode("owner");
-(function miniLoop(t) { drawMinime(t / 1000); requestAnimationFrame(miniLoop); })(0);
+// ---------- boot ----------
+function loadLocalLook() { try { return JSON.parse(localStorage.getItem("phyco-look") || "null"); } catch { return null; } }
+myLook = loadLocalLook() || randomLook(Date.now());
+setTab("home");
+derive(); renderProfile(); renderGuestbook(); renderNews(); renderBgm(); renderCounter(); renderControls(); renderNet();
+(function portrait(t) { drawPortrait(t / 1000); if (activeTab === "minimi") drawPreview(t / 1000); requestAnimationFrame(portrait); })(0);
 requestAnimationFrame((t) => { last = t; tick(t); });
+
+connect().then((n) => {
+  net = n; me = n.me;
+  role = me.isOwner ? "owner" : "visitor";
+  $("resetBtn").hidden = n.mode !== "local";
+  n.subscribe({
+    room(doc) {
+      if (doc) room = { ...sampleRoom(), ...doc };
+      else if (me.isOwner && !roomLoaded && n.mode === "live") { room = { ...sampleRoom(), ownerId: me.id, ownerNick: "" }; n.saveRoom(cleanRoom()).catch(() => {}); }
+      roomLoaded = true;
+      if (drag) return;
+      bgCache.key = ""; derive(); renderProfile(); renderBgm(); renderDecor(); resolveNames();
+    },
+    pranks(list) {
+      const mine = pranks.filter((p) => !list.some((q) => q.id === p.id) && p.by === me.id && Date.now() - p.at < 5000);
+      pranks = [...list, ...mine];
+      derive();
+      for (const p of list) if (!played.has(p.id)) { if (p.at > loadedAt - 3000 && p.at > (room.cleanedAt || 0)) playPrank(p); else played.add(p.id); }
+    },
+    guestbook(list) { guestbook = list; renderGuestbook(); renderNews(); resolveNames(); },
+    secrets(m) { secrets = { ...secrets, ...m }; renderGuestbook(); },
+    minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
+    visits(list) { visits = list; renderCounter(); },
+    peers(list) { peers = list; resolveNames(); },
+    error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
+  });
+  renderControls(); renderProfile(); renderGuestbook(); renderBgm();
+});
+$("resetBtn").addEventListener("click", () => { net?.reset?.(); room = sampleRoom(); botPranks = []; derive(); renderProfile(); toast("예시 방으로 되돌렸어요."); });
