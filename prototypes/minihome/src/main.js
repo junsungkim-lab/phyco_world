@@ -26,7 +26,7 @@ import * as thrustFx from "../vendor/pixelfx/src/fx/melee/thrust.js";
 import * as damageNum from "../vendor/pixelfx/src/fx/ui/damage-number.js";
 import * as critHit from "../vendor/pixelfx/src/fx/impacts/crit-hit.js";
 import { Bgm, SONGS } from "./bgm.js";
-import { CATALOG, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
+import { CATALOG, CATEGORIES, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
 import { connect, newId, today, pairId } from "./net.js";
 import { JOBS, KEYS, jobById, skillOf, aimSkill, skillTargets } from "./skills.js";
 
@@ -583,6 +583,8 @@ function renderCooldowns() {
 // ---------- basic attack ----------
 let weapon = "fist";
 let owned = ["fist"];
+let furni = [];                      // furniture types I bought (기본 ones are free)
+let shopCat = "basic";
 let atkReady = 0, atkUntil = 0;
 let pendingHit = null;
 const hitAnim = new Map();           // item id -> when it was last hit (wobble + flash)
@@ -1139,13 +1141,34 @@ for (const f of [{ kind: "atk", ico: WEAPONS.fist.ico, label: "때리기 (스페
   b.addEventListener("click", (e) => { e.stopPropagation(); if (f.kind === "atk") attack(); else doAction(f.kind, null); });
   dock.append(b);
 }
-const shop = $("shop");
-for (const [type, def] of Object.entries(CATALOG)) {
-  const b = document.createElement("button"); b.type = "button"; b.className = "pal";
-  const c = document.createElement("canvas"); c.width = def.s.width; c.height = def.s.height; c.getContext("2d").drawImage(def.s, 0, 0);
-  const l = document.createElement("span"); l.textContent = def.name;
-  b.append(c, l); b.addEventListener("click", () => addItem(type)); shop.append(b);
+// furniture shop: category tabs; 기본 is free, everything else is bought once with coins and then placed freely
+const hasFurni = (type) => !CATALOG[type].price || furni.includes(type);
+for (const [k, label] of CATEGORIES) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.cat = k; b.textContent = label;
+  b.addEventListener("click", () => { shopCat = k; renderShop(); }); $("shopCats").append(b);
 }
+function renderShop() {
+  const shop = $("shop"); shop.replaceChildren();
+  document.querySelectorAll("#shopCats [data-cat]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.cat === shopCat)));
+  for (const [type, def] of Object.entries(CATALOG)) {
+    if (def.cat !== shopCat) continue;
+    const have = hasFurni(type);
+    const b = document.createElement("button"); b.type = "button"; b.className = "pal" + (have ? "" : " locked");
+    const c = document.createElement("canvas"); c.width = def.s.width; c.height = def.s.height; c.getContext("2d").drawImage(def.s, 0, 0);
+    const l = document.createElement("span"); l.textContent = def.name;
+    const pr = document.createElement("small"); pr.textContent = have ? "" : `🪙 ${def.price}`;
+    b.append(c, l, pr);
+    b.addEventListener("click", () => {
+      if (have) { addItem(type); return; }
+      if (myCoins < def.price) { toast(`코인이 부족해요. ${def.name}은(는) ${def.price}코인이에요.`); return; }
+      myCoins -= def.price; furni = [...furni, type]; renderCoins(); renderShop();
+      net?.buyFurni(type, def.price).catch(() => toast("사지 못했어요."));
+      addItem(type);
+    });
+    shop.append(b);
+  }
+}
+renderShop();
 for (const [k, w] of Object.entries(WALLS)) { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.wall = k; b.textContent = w.name; b.addEventListener("click", () => { room.wall = k; renderDecor(); saveRoomSoon(); }); $("walls").append(b); }
 for (const [k, f] of Object.entries(FLOORS)) { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.floor = k; b.textContent = f.name; b.addEventListener("click", () => { room.floor = k; renderDecor(); saveRoomSoon(); }); $("floors").append(b); }
 
@@ -1540,7 +1563,7 @@ connect().then(async (n) => {
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
     peers(list) { peers = list; resolveNames(); },
     ilchon(list) { ilchon = list; renderIlchon(); resolveNames(); },
-    coins(d) { myCoins = d.coins || 0; owned = ["fist", ...(d.weapons || [])]; if (!owned.includes(weapon)) weapon = "fist"; renderCoins(); renderWeapons(); },
+    coins(d) { myCoins = d.coins || 0; furni = d.furni || []; renderShop(); owned = ["fist", ...(d.weapons || [])]; if (!owned.includes(weapon)) weapon = "fist"; renderCoins(); renderWeapons(); },
     error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
   });
   await Promise.race([firstProfiles, new Promise((r) => setTimeout(r, 4000))]);

@@ -12,7 +12,7 @@
 //   secret/<uid>             { posts: { <guestbookId>: text } }                   the writer's secret posts
 //   minimi/<uid>             { look }                                             each person writes their own
 //   visits/<hid>__<uid>__<d> { home, by, date, at }                              one per visitor per home per day
-//   coins/<uid>              { coins, weapons, log }                              each person's own coins
+//   coins/<uid>              { coins, weapons, furni, log }                           each person's own coins
 //   ilchon/<a>__<b>          { a, b, from, to, status: "wait"|"ok", names: { <uid>: 일촌명 }, at }   a < b
 //   profiles/<uid>           { handle, nick }   chosen on the entry screen; the handle is the minihome address
 //   handles/<handle>         { uid }            who owns a handle
@@ -106,6 +106,12 @@ async function liveNet(db, room, user) {
       const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
       await ref.set({ ...d, coins: (d.coins || 0) + n, log: [...(d.log || []), { n, why, at: Date.now() }].slice(-20) });
     },
+    async buyFurni(t, price) {
+      if (!id) return;
+      const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
+      if ((d.coins || 0) < price) throw new Error("not enough coins");
+      await ref.set({ ...d, coins: d.coins - price, furni: [...new Set([...(d.furni || []), t])], log: [...(d.log || []), { n: -price, why: t, at: Date.now() }].slice(-20) });
+    },
     async buyWeapon(w, price) {
       if (!id) return;
       const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
@@ -155,7 +161,7 @@ function localNet() {
     if (g) {
       g.profiles(plain(data.profiles)); g.minimi(plain(data.minimi)); g.secrets(plain(data.secrets));
       g.ilchon(plain(Object.entries(data.ilchon).map(([id, x]) => ({ id, ...x })).filter((x) => x.a === meId || x.b === meId)));
-      const c = data.coins[meId] || {}; g.coins?.({ coins: c.coins || 0, weapons: c.weapons || [] });
+      const c = data.coins[meId] || {}; g.coins?.({ coins: c.coins || 0, weapons: c.weapons || [], furni: c.furni || [] });
     }
     emitHome();
   };
@@ -204,6 +210,7 @@ function localNet() {
       data.handles[handle] = meId; data.profiles[meId] = { handle, nick }; data.nicks[meId] = nick; save();
     },
     async addCoins(n) { fresh(); coinsOf().coins += n; save(); },
+    async buyFurni(t, price) { fresh(); const c = coinsOf(); c.coins -= price; c.furni = [...new Set([...(c.furni || []), t])]; save(); },
     async buyWeapon(w, price) { fresh(); const c = coinsOf(); c.coins -= price; c.weapons = [...new Set([...(c.weapons || []), w])]; save(); },
     async logVisit() { fresh(); const date = today(); if (!data.visits.some((v) => v.home === home && v.by === meId && v.date === date)) data.visits.push({ home, by: meId, date, at: Date.now() }); save(); },
     async prunePranks(ids) { fresh(); const s = new Set(ids); data.pranks = data.pranks.filter((p) => !s.has(p.id)); save(); },

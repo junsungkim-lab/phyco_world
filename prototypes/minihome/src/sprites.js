@@ -54,44 +54,45 @@ function outline(g, W, H) {
   d.data.set(out); g.putImageData(d, 0, 0);
 }
 const WOOD = ["#c48a56", "#a86d3e", "#80502c"], TEAL = ["#6cc7bf", "#3fa7a0", "#2c8781"];
+const METAL = ["#c8c8d6", "#9a9aac", "#7a7a8e"], IRON = ["#4a4a5e", "#33334a", "#2b2b3a"];
 // face columns on a box's right face (u from u0 to u1 at v, z from z0 to z1): for screens and book rows
 function faceR(r, P, u0, u1, v, z0, z1, col) { for (let u = u0; u < u1; u++) { const [x, y] = P(u + 0.5, v, z1); r(Math.round(x - 0.5), Math.round(y), 1, z1 - z0, col); } }
 
 export const CATALOG = {
-  bed: { name: "침대", layer: "floor", s: isoSprite([
+  bed: { cat: "basic", price: 0, name: "침대", layer: "floor", s: isoSprite([
     [38, 0, 0, 3, 22, 21, ...WOOD],
     [0, 0, 0, 38, 22, 7, ...WOOD],
     [1, 1, 7, 37, 20, 3, "#fdf6ee", "#e8dccc", "#d6c8b6"],
     [0, 0, 9, 24, 22, 2, "#f28ab2", "#d9668f", "#c25480"],
     [28, 4, 10, 8, 14, 3, "#ffffff", "#e6e0ee", "#d0c8dc"],
   ], (r, P) => { for (let u = 2; u < 22; u += 5) faceR(r, P, u, u + 2, 0, 9, 11, "#ffc2d1"); }) },
-  sofa: { name: "소파", layer: "floor", s: isoSprite([
+  sofa: { cat: "basic", price: 0, name: "소파", layer: "floor", s: isoSprite([
     [0, 12, 0, 34, 4, 19, ...TEAL],
     [0, 0, 0, 34, 12, 8, "#5bc0b8", TEAL[1], TEAL[2]],
     [30, 0, 0, 4, 12, 13, ...TEAL],
     [20, 7, 8, 7, 4, 8, "#ffe7a3", "#ffd36b", "#e8b84a"],
     [0, 0, 0, 4, 12, 13, ...TEAL],
   ]) },
-  tv: { name: "TV", layer: "floor", s: isoSprite([
+  tv: { cat: "basic", price: 0, name: "TV", layer: "floor", s: isoSprite([
     [0, 0, 0, 22, 12, 9, "#8e6db0", "#6b4a8a", "#55386f"],
     [2, 4, 9, 18, 6, 16, "#4a4a5e", "#33334a", "#2b2b3a"],
   ], (r, P) => { faceR(r, P, 4, 18, 4, 12, 23, "#5ec8f2"); faceR(r, P, 5, 8, 4, 19, 22, "#bfeeff"); }), screen: { u0: 4, u1: 18, v: 4, z0: 12, z1: 23 } },
-  plant: { name: "화분", layer: "floor", s: isoSprite([[0, 0, 0, 9, 9, 9, "#e57b55", "#d0603e", "#a84a2e"]], (r, P) => {
+  plant: { cat: "deco", price: 10, name: "화분", layer: "floor", s: isoSprite([[0, 0, 0, 9, 9, 9, "#e57b55", "#d0603e", "#a84a2e"]], (r, P) => {
     const [x, y] = P(4.5, 4.5, 9);
     const X = Math.round(x), Y = Math.round(y);
     r(X - 1, Y - 16, 2, 16, "#3d8b3d");
     r(X - 7, Y - 12, 6, 4, "#56b356"); r(X + 1, Y - 16, 6, 4, "#56b356"); r(X - 8, Y - 7, 6, 4, "#4aa14a"); r(X + 2, Y - 9, 6, 4, "#4aa14a"); r(X - 3, Y - 20, 5, 4, "#6cc96c");
   }, 16) },
-  lamp: { name: "스탠드", layer: "floor", s: isoSprite([
+  lamp: { cat: "deco", price: 10, name: "스탠드", layer: "floor", s: isoSprite([
     [0, 0, 0, 7, 7, 2, "#8a8498", "#6d6680", "#4a4458"],
     [-1, -1, 24, 9, 9, 8, "#fff2c0", "#ffd36b", "#e8b84a"],
   ], (r, P) => { const [x, y] = P(3.5, 3.5, 24); r(Math.round(x) - 1, Math.round(y), 2, 22, "#6d6680"); }) },
-  rug: { name: "러그", layer: "floor", flat: true, s: isoSprite([
+  rug: { cat: "deco", price: 15, name: "러그", layer: "floor", flat: true, s: isoSprite([
     [0, 0, 0, 46, 30, 1, "#c97bd6", "#a85cb8", "#a85cb8"],
     [5, 5, 1, 36, 20, 0, "#e6a7ee", "#e6a7ee", "#e6a7ee"],
     [17, 11, 1, 12, 8, 0, "#fff2a8", "#fff2a8", "#fff2a8"],
   ]) },
-  shelf: { name: "책장", layer: "floor", s: isoSprite([[0, 0, 0, 26, 11, 42, "#a86d3e", "#8b5a33", "#6e4426"]], (r, P) => {
+  shelf: { cat: "deco", price: 20, name: "책장", layer: "floor", s: isoSprite([[0, 0, 0, 26, 11, 42, "#a86d3e", "#8b5a33", "#6e4426"]], (r, P) => {
     const books = ["#ff6f91", "#5cc8b8", "#ffd36b", "#7a6cff", "#f2f0fa", "#56b356"];
     for (let row = 0; row < 3; row++) {
       const z0 = 3 + row * 13;
@@ -99,37 +100,110 @@ export const CATALOG = {
       for (let i = 0; i < 7; i++) faceR(r, P, 3 + i * 3, 5 + i * 3, 0, z0, z0 + 9 - (i % 3), books[(i + row * 2) % 6]);
     }
   }) },
-  table: { name: "케이크 테이블", layer: "floor", s: isoSprite([
+  table: { cat: "deco", price: 20, name: "케이크 테이블", layer: "floor", s: isoSprite([
     [21, 13, 0, 2, 2, 12, ...WOOD], [1, 13, 0, 2, 2, 12, ...WOOD], [21, 1, 0, 2, 2, 12, ...WOOD], [1, 1, 0, 2, 2, 12, ...WOOD],
     [0, 0, 12, 24, 16, 3, "#dcae7a", "#c08a52", "#9a6a3a"],
     [8, 5, 15, 8, 7, 5, "#fff8f0", "#f9e6ea", "#f2d6dc"],
     [8, 5, 20, 8, 7, 2, "#f9b6cf", "#f28ab2", "#d9668f"],
   ], (r, P) => { const [x, y] = P(12, 8.5, 22); r(Math.round(x), Math.round(y) - 5, 1, 4, "#7ec8f0"); r(Math.round(x), Math.round(y) - 6, 1, 1, "#ffd36b"); }, 4) },
-  bear: { name: "곰인형", layer: "floor", s: sprite(16, 18, (r) => {
+  bear: { cat: "deco", price: 10, name: "곰인형", layer: "floor", s: sprite(16, 18, (r) => {
     r(2, 0, 3, 3, "#8a5a32"); r(11, 0, 3, 3, "#8a5a32"); r(3, 1, 10, 7, "#b07a4a"); r(4, 7, 8, 8, "#b07a4a");
     r(6, 4, 4, 2, "#e8c9a0"); r(5, 3, 1, 1, "#221a2e"); r(10, 3, 1, 1, "#221a2e"); r(6, 9, 4, 4, "#e8c9a0");
     r(3, 13, 4, 5, "#9c6a3e"); r(9, 13, 4, 5, "#9c6a3e"); r(5, 8, 6, 1, "#ff6f91");
   }) },
-  frame: { name: "액자", layer: "wall", s: sprite(24, 20, (r) => {
+  frame: { cat: "wall", price: 10, name: "액자", layer: "wall", s: sprite(24, 20, (r) => {
     r(0, 0, 24, 20, "#c9a227"); r(2, 2, 20, 16, "#bfe3ff"); r(4, 11, 8, 7, "#6cc96c"); r(10, 8, 10, 10, "#4aa14a"); r(16, 4, 3, 3, "#ffd36b");
   }) },
-  clock: { name: "시계", layer: "wall", s: sprite(16, 16, (r) => {
+  clock: { cat: "wall", price: 10, name: "시계", layer: "wall", s: sprite(16, 16, (r) => {
     r(4, 0, 8, 16, "#5c3a20"); r(0, 4, 16, 8, "#5c3a20"); r(1, 2, 14, 12, "#5c3a20"); r(2, 1, 12, 14, "#5c3a20");
     r(2, 3, 12, 10, "#fffaf3"); r(3, 2, 10, 12, "#fffaf3"); r(7, 4, 2, 5, "#2d2540"); r(8, 7, 4, 2, "#2d2540");
   }) },
-  poster: { name: "하트 포스터", layer: "wall", s: sprite(20, 26, (r) => {
+  poster: { cat: "wall", price: 10, name: "하트 포스터", layer: "wall", s: sprite(20, 26, (r) => {
     r(0, 0, 20, 26, "#fffaf3"); r(0, 0, 20, 1, "#d9cde8"); r(4, 6, 4, 3, "#ff6f91"); r(12, 6, 4, 3, "#ff6f91"); r(3, 8, 14, 4, "#ff6f91");
     r(5, 12, 10, 3, "#ff6f91"); r(7, 15, 6, 2, "#ff6f91"); r(9, 17, 2, 1, "#ff6f91"); r(5, 7, 2, 1, "#ffc2d1"); r(4, 21, 12, 1, "#9a8fb0");
   }) },
-  fishbowl: { name: "어항", layer: "floor", s: sprite(20, 22, (r) => {
+  fishbowl: { cat: "deco", price: 25, name: "어항", layer: "floor", s: sprite(20, 22, (r) => {
     r(3, 18, 14, 4, "#8b5a33"); r(2, 4, 16, 14, "#bfeeff"); r(4, 2, 12, 2, "#bfeeff"); r(2, 8, 16, 10, "#7fd0f0");
     r(7, 11, 4, 3, "#ff9a2a"); r(11, 12, 2, 1, "#ff9a2a"); r(8, 11, 1, 1, "#2d2540"); r(4, 5, 2, 4, "#ffffff");
   }) },
-  guitar: { name: "기타", layer: "floor", s: sprite(14, 36, (r) => {
+  guitar: { cat: "hobby", price: 25, name: "기타", layer: "floor", s: sprite(14, 36, (r) => {
     r(6, 0, 2, 16, "#5c3a20"); r(5, 0, 4, 3, "#2d2540"); r(2, 16, 10, 8, "#d0603e"); r(1, 22, 12, 12, "#d0603e");
     r(5, 24, 4, 4, "#2d2540"); r(4, 31, 6, 2, "#5c3a20"); r(3, 18, 2, 4, "#e57b55");
   }) },
+  // ---- 운동
+  pullup: { cat: "gym", price: 30, name: "철봉", layer: "floor", s: isoSprite([
+    [20, 0, 0, 2, 4, 1, ...METAL], [20, 1, 0, 2, 2, 34, ...METAL],
+    [0, 1, 32, 22, 2, 2, "#e0e0ea", "#b8b8c8", "#9a9aac"],
+    [0, 0, 0, 2, 4, 1, ...METAL], [0, 1, 0, 2, 2, 34, ...METAL],
+  ]) },
+  dumbbell: { cat: "gym", price: 30, name: "덤벨 거치대", layer: "floor", s: isoSprite([
+    [0, 0, 0, 24, 8, 10, "#5a5a6e", "#44445a", "#33334a"],
+    [17, 1, 10, 5, 6, 3, ...IRON], [10, 1, 10, 5, 6, 3, "#ff6f91", "#d9668f", "#c25480"], [3, 1, 10, 5, 6, 3, ...IRON],
+  ]) },
+  treadmill: { cat: "gym", price: 50, name: "러닝머신", layer: "floor", s: isoSprite([
+    [26, 10, 3, 2, 2, 20, ...METAL], [26, 0, 3, 2, 2, 20, ...METAL],
+    [24, 0, 22, 6, 12, 3, "#4a4a5e", "#33334a", "#2b2b3a"],
+    [0, 0, 0, 28, 12, 3, "#3a3a48", "#7a7a90", "#5a5a6e"],
+    [1, 1, 3, 24, 10, 0, "#2b2b3a", "#2b2b3a", "#2b2b3a"],
+  ], (r, P) => { const [x, y] = P(27, 6, 25); r(Math.round(x) - 2, Math.round(y) - 1, 4, 1, "#7fe08a"); }) },
+  bench: { cat: "gym", price: 60, name: "벤치프레스", layer: "floor", s: isoSprite([
+    [18, 15, 16, 3, 2, 10, ...IRON],
+    [18, 12, 0, 2, 2, 24, ...METAL], [18, 0, 0, 2, 2, 24, ...METAL],
+    [19, -3, 22, 1, 20, 1, "#e0e0ea", "#b8b8c8", "#9a9aac"],
+    [18, -4, 16, 3, 2, 10, ...IRON],
+    [2, 4, 0, 2, 6, 6, ...METAL], [0, 4, 6, 20, 6, 3, "#e5484d", "#c43a3f", "#a32f33"],
+  ]) },
+  // ---- 욕실
+  bathtub: { cat: "bath", price: 60, name: "반신욕 욕조", layer: "floor", s: isoSprite([
+    [32, 7, 12, 2, 2, 8, ...METAL],
+    [0, 0, 0, 34, 18, 12, "#ffffff", "#e8eef4", "#d0dae4"],
+    [2, 2, 12, 30, 14, 0, "#9fdcf5", "#9fdcf5", "#9fdcf5"],
+  ], (r, P) => {
+    for (const [u, v] of [[8, 6], [14, 11], [20, 5], [25, 10]]) { const [x, y] = P(u, v, 12); r(Math.round(x), Math.round(y) - 1, 2, 2, "#ffffff"); }
+    const [x, y] = P(12, 8, 12); r(Math.round(x), Math.round(y) - 3, 3, 2, "#ffd36b"); r(Math.round(x) + 2, Math.round(y) - 4, 2, 2, "#ffd36b"); r(Math.round(x) + 4, Math.round(y) - 4, 1, 1, "#ff9a2a");
+  }) },
+  toilet: { cat: "bath", price: 30, name: "변기", layer: "floor", s: isoSprite([
+    [10, 0, 0, 4, 10, 18, "#ffffff", "#e8eef4", "#d0dae4"],
+    [0, 1, 0, 10, 8, 7, "#ffffff", "#e8eef4", "#d0dae4"],
+    [0, 1, 7, 10, 8, 1, "#bfe3ff", "#a8cfee", "#94bce0"],
+  ]) },
+  sink: { cat: "bath", price: 30, name: "세면대", layer: "floor", s: isoSprite([
+    [0, 0, 0, 14, 10, 14, "#bfe3ff", "#a8cfee", "#94bce0"],
+    [0, 0, 14, 14, 10, 2, "#ffffff", "#e8eef4", "#d0dae4"],
+    [3, 2, 16, 8, 6, 0, "#9fdcf5", "#9fdcf5", "#9fdcf5"],
+    [12, 4, 16, 2, 2, 5, ...METAL],
+  ]) },
+  // ---- 주방
+  fridge: { cat: "kitchen", price: 40, name: "냉장고", layer: "floor", s: isoSprite([
+    [0, 0, 0, 14, 12, 40, "#f2f4f8", "#d8dce6", "#bfc4d2"],
+  ], (r, P) => { faceR(r, P, 0, 14, 0, 26, 27, "#9aa0b2"); faceR(r, P, 2, 3, 0, 28, 36, "#7a8094"); faceR(r, P, 2, 3, 0, 14, 23, "#7a8094"); faceR(r, P, 8, 12, 0, 30, 33, "#ff6f91"); }) },
+  stove: { cat: "kitchen", price: 35, name: "가스레인지", layer: "floor", s: isoSprite([
+    [0, 0, 0, 22, 12, 16, "#f2f4f8", "#d8dce6", "#bfc4d2"],
+    [0, 0, 16, 22, 12, 1, "#3a3a48", "#2b2b3a", "#2b2b3a"],
+    [13, 3, 17, 7, 6, 6, "#e5484d", "#c43a3f", "#a32f33"],
+  ], (r, P) => { faceR(r, P, 3, 19, 0, 4, 12, "#4a4a5e"); faceR(r, P, 4, 18, 0, 5, 11, "#ffb46b"); const [x, y] = P(5, 6, 17); r(Math.round(x) - 2, Math.round(y) - 1, 5, 2, "#5ec8f2"); }) },
+  // ---- 취미
+  computer: { cat: "hobby", price: 50, name: "컴퓨터 책상", layer: "floor", s: isoSprite([
+    [22, 10, 0, 2, 2, 12, ...WOOD], [0, 10, 0, 2, 2, 12, ...WOOD], [22, 0, 0, 2, 2, 12, ...WOOD], [0, 0, 0, 2, 2, 12, ...WOOD],
+    [0, 0, 12, 24, 12, 2, "#dcae7a", "#c08a52", "#9a6a3a"],
+    [10, 9, 14, 4, 2, 3, "#4a4a5e", "#33334a", "#2b2b3a"],
+    [4, 8, 17, 16, 2, 11, "#4a4a5e", "#33334a", "#2b2b3a"],
+    [6, 2, 14, 10, 4, 1, "#e0e0ea", "#b8b8c8", "#9a9aac"],
+  ], (r, P) => { faceR(r, P, 5, 19, 8, 18, 27, "#5ec8f2"); faceR(r, P, 6, 9, 8, 23, 26, "#bfeeff"); }) },
+  arcade: { cat: "hobby", price: 70, name: "오락기", layer: "floor", s: isoSprite([
+    [0, 0, 0, 14, 12, 38, "#7a6cff", "#5a4ccf", "#463aa8"],
+    [0, -4, 14, 14, 4, 3, "#2b2b3a", "#4a4a5e", "#33334a"],
+  ], (r, P) => {
+    faceR(r, P, 2, 12, 0, 20, 31, "#2b2b3a"); faceR(r, P, 3, 11, 0, 21, 30, "#5ec8f2"); faceR(r, P, 5, 7, 0, 24, 26, "#ffd36b");
+    faceR(r, P, 1, 13, 0, 33, 37, "#ff6f91");
+    const [x, y] = P(4, -2, 17); r(Math.round(x), Math.round(y) - 1, 2, 2, "#e5484d"); const [x2, y2] = P(9, -2, 17); r(Math.round(x2), Math.round(y2) - 1, 2, 2, "#ffd36b");
+  }) },
 };
+
+// shop categories, in the order the tabs show
+export const CATEGORIES = [
+  ["basic", "기본"], ["deco", "인테리어"], ["wall", "벽 장식"], ["gym", "운동"], ["bath", "욕실"], ["kitchen", "주방"], ["hobby", "취미"],
+];
 
 // ---------- wallpapers & floors ----------
 export const WALLS = {

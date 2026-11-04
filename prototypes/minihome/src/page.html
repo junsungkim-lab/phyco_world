@@ -226,6 +226,9 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 .palette { display: flex; flex-wrap: wrap; gap: 5px; }
 .pal { display: grid; justify-items: center; gap: 2px; min-width: 60px; border: 1px solid var(--line2); background: var(--paper); border-radius: 7px; padding: 5px 5px 3px; font-size: 11px; }
 .pal:hover { border-color: var(--berry); }
+.pal small { font-size: 10px; color: var(--berry); min-height: 12px; }
+.pal.locked canvas { filter: grayscale(.85) opacity(.55); }
+#shopCats { margin-bottom: 6px; }
 .pal canvas { image-rendering: pixelated; height: auto; max-height: 34px; max-width: 54px; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip { border: 1px solid var(--line2); background: var(--paper); border-radius: 999px; padding: 2px 11px; font-size: 12px; }
@@ -430,6 +433,7 @@ body.locked { overflow: hidden; }
             <button type="button" class="btn small" id="cleanBtn">싹 치우기</button>
           </div>
           <h2>가구</h2>
+          <div class="chips" id="shopCats"></div>
           <div class="palette" id="shop"></div>
           <h2>벽지</h2><div class="chips" id="walls"></div>
           <h2>바닥</h2><div class="chips" id="floors"></div>
