@@ -27,7 +27,7 @@ import * as damageNum from "../vendor/pixelfx/src/fx/ui/damage-number.js";
 import * as critHit from "../vendor/pixelfx/src/fx/impacts/crit-hit.js";
 import { Bgm, SONGS } from "./bgm.js";
 import { CATALOG, WALLS, FLOORS, LOOK_OPTIONS, DEFAULT_LOOK, drawMinimi, randomLook, mulberry, hashStr, sprite, POOP, TRASH } from "./sprites.js";
-import { connect, newId, today } from "./net.js";
+import { connect, newId, today, pairId } from "./net.js";
 import { JOBS, KEYS, jobById, skillOf, aimSkill, skillTargets } from "./skills.js";
 
 const $ = (id) => document.getElementById(id);
@@ -122,7 +122,10 @@ const names = {};
 const loadedAt = Date.now();
 const played = new Set();
 let myLook = null;
-let role = "visitor";     // "owner" | "visitor" (the owner can switch to test pranks)
+let role = "visitor";     // "owner" in my own minihome, "visitor" in anyone else's
+let currentHome = null;   // whose minihome is open (their user id)
+let homeOpenedAt = Date.now();
+let ilchon = [];          // my 일촌 links: { id, a, b, from, to, status, names }
 
 // ---------- canvas ----------
 const canvas = $("room");
@@ -674,10 +677,6 @@ let myCoins = 0;
 function renderCoins() { $("coins").textContent = myCoins; $("bagCoins").textContent = myCoins; }
 
 function finishVisit(caught, byOwner) {
-  const msg = "다녀갔어요 👣";
-  const e = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg, secret: false, auto: true, at: Date.now(), reply: null };
-  guestbook.unshift(e); renderGuestbook();
-  net.addGuest(e).catch(() => {});
   heat = null;
   if (caught) { actor.st = "squat"; busy = true; speak("헉 들켰다...", 2); later(1.5, () => { spawn(poof, actor.x, actor.y + 2); leaveRoom(); }); }
   else { spawn(poof, DOOR.x, DOOR.y + 4); toast("도망 성공!"); leaveRoom(); }
@@ -821,7 +820,7 @@ function drawTrash(t) {
   ctx.fillStyle = b; ctx.fillRect(Math.round(t.x - 2), Math.round(t.y - 1), 4, 1);
 }
 const peerPos = new Map();
-function visiblePeers() { return peers.filter((p) => p.inRoom && typeof p.x === "number"); }
+function visiblePeers() { return peers.filter((p) => p.inRoom && p.home === currentHome && typeof p.x === "number"); }
 function render(now) {
   ctx.drawImage(background(), 0, 0);
   for (const f of D.fires) { ctx.fillStyle = "rgba(40,24,20,0.3)"; ctx.fillRect(f.x - 20, f.y - 3, 40, 6); }
@@ -920,10 +919,10 @@ function tick(nowMs) {
 }
 let lastPres = "";
 // the owner, walking in their own room as the owner (an owner testing as a visitor does not catch anyone)
-function isHostPeer(p) { return !!(p.host && (net?.mode === "local" || (room.ownerId && p.by === room.ownerId))); }
+function isHostPeer(p) { return !!(p.host && p.by === currentHome); }
 function pushPresence(force) {
   if (!net) return;
-  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on && FEATURES.skills ? myJob : null, visit: visitId, wp: weapon };
+  const p = { inRoom: actor.on, x: Math.round(actor.x), y: Math.round(actor.y), dir: actor.dir, st: actor.st, look: myLook, nick: $("nick").value.trim().slice(0, 12), say: say.text, sayUntil: say.until, wanted: !!heat, host: role === "owner" && me.isOwner, job: actor.on && FEATURES.skills ? myJob : null, visit: visitId, wp: weapon, home: currentHome };
   const s = JSON.stringify(p);
   if (s !== lastPres || force) { lastPres = s; net.presence(p); }
 }
@@ -1037,7 +1036,7 @@ function closeMenu() { menu.hidden = true; }
 
 // ---------- decorating (owner, 미니룸 tab) ----------
 let saveTimer = null;
-function cleanRoom() { return JSON.parse(JSON.stringify({ ...room, ownerId: room.ownerId || me.id })); }
+function cleanRoom() { return JSON.parse(JSON.stringify({ ...room, ownerId: currentHome, ownerNick: me.isOwner ? myNick() : room.ownerNick })); }
 // while the owner is moving things, the room on screen is the truth: echoes of earlier saves are ignored until the last save lands
 let roomDirty = false, roomSaving = 0;
 function saveRoomSoon() {
@@ -1118,18 +1117,13 @@ function renderControls() {
   $("pad").hidden = !(actor.on && activeTab === "home");
   $("dock").hidden = !(actor.on && role === "visitor" && activeTab === "home");
   const fist = dock.querySelector('[data-free="atk"]'); if (fist) fist.textContent = WEAPONS[weapon].ico;
-  $("roleRow").hidden = !me.isOwner;
-  $("roleOwner").setAttribute("aria-pressed", String(role === "owner"));
-  $("roleVisitor").setAttribute("aria-pressed", String(role === "visitor"));
+  renderIlchon();
   $("decorLock").hidden = me.isOwner;
   $("decorTools").hidden = !me.isOwner;
   $("cleanBtn").hidden = !me.isOwner;
 }
 $("enterBtn").addEventListener("click", enterRoom);
 $("leaveBtn").addEventListener("click", () => { if (heat) { toast("문까지 직접 도망가야 해요!"); return; } spawn(poof, actor.x, actor.y); leaveRoom(); });
-$("roleOwner").addEventListener("click", () => { role = "owner"; heat = null; renderControls(); });
-$("roleVisitor").addEventListener("click", () => { role = "visitor"; renderControls(); });
-$("botBtn").addEventListener("click", () => addBots(2));
 $("removeBtn").addEventListener("click", removeSelected);
 $("flipBtn").addEventListener("click", flipSelected);
 $("cleanBtn").addEventListener("click", cleanUp);
@@ -1219,14 +1213,16 @@ function miniCanvas(look, size = 48) {
 }
 function entryName(g) { return (g.by && names[g.by]) || g.nick || "손님"; }
 function renderGuestbook() {
-  $("gbNew").hidden = !guestbook.some((g) => fmt(g.at).slice(0, 10) === fmt(Date.now()).slice(0, 10));
+  $("gbNew").hidden = !guestbook.some((g) => !g.auto && fmt(g.at).slice(0, 10) === fmt(Date.now()).slice(0, 10));
   const ul = $("gbList"); ul.replaceChildren();
-  const n = guestbook.length;
-  guestbook.slice(0, 60).forEach((g, i) => {
+  const list = guestbook.filter((g) => !g.auto);   // old automatic "came by" notes stay hidden
+  const n = list.length;
+  list.slice(0, 60).forEach((g, i) => {
     const li = document.createElement("li"); li.className = "gb" + (g.auto ? " auto" : "") + (g.secret ? " secret" : "");
     const head = document.createElement("div"); head.className = "gb-head";
     const no = document.createElement("span"); no.className = "no"; no.textContent = `No.${n - i}`;
-    const nm = document.createElement("b"); nm.textContent = entryName(g);
+    const nm = document.createElement(g.by && g.by !== currentHome ? "button" : "b"); nm.textContent = entryName(g);
+    if (nm.tagName === "BUTTON") { nm.type = "button"; nm.className = "who-link"; nm.title = "이 사람 미니홈피로"; nm.addEventListener("click", () => goHome(g.by)); }
     const tm = document.createElement("time"); tm.textContent = `(${fmt(g.at)})`;
     head.append(no, nm, tm);
     if (g.auto) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "방문"; head.append(t); }
@@ -1312,6 +1308,7 @@ function drawPreview(t) {
   preview.clearRect(0, 0, 32, 32);
   drawMinimi(preview, 16, 30, draftLook || myLook, Math.floor(t / 2) % 2 ? "walk" : "idle", t, 1, 1);
 }
+$("nick").addEventListener("change", () => { net?.setNick?.($("nick").value.trim()); resolveNames(); renderIlchon(); });
 $("saveLook").addEventListener("click", () => {
   myLook = { ...draftLook }; if (me.id) minimiMap[me.id] = myLook;
   net?.saveMinimi(myLook).catch(() => {});
@@ -1381,13 +1378,15 @@ async function resolveNames() {
   try {
     const ids = new Set();
     if (room.ownerId) ids.add(room.ownerId);
+    if (currentHome) ids.add(currentHome);
+    ilchon.forEach((x) => { ids.add(x.a); ids.add(x.b); });
     if (me.id) ids.add(me.id);
     guestbook.forEach((g) => g.by && ids.add(g.by));
     peers.forEach((p) => p.by && ids.add(p.by));
     const got = await net.names([...ids]);
     let changed = false;
     for (const [k, v] of Object.entries(got)) if (v && names[k] !== v) { names[k] = v; changed = true; }
-    if (changed) { renderGuestbook(); renderProfile(); }
+    if (changed) { renderGuestbook(); renderProfile(); renderIlchon(); }
   } finally { namesBusy = false; }
 }
 
@@ -1399,37 +1398,109 @@ derive(); renderProfile(); renderGuestbook(); renderBgm(); renderCounter(); rend
 (function portrait(t) { drawPortrait(t / 1000); if (activeTab === "minimi") drawPreview(t / 1000); requestAnimationFrame(portrait); })(0);
 requestAnimationFrame((t) => { last = t; tick(t); });
 
-connect().then((n) => {
+// ---------- homes: everyone has one; 일촌 파도타기 moves between them ----------
+const homeHash = (id) => "h-" + String(id).replace(/^u_/, "u-");
+const hashHome = () => { const m = /^#h-([A-Za-z0-9-]+)$/.exec(location.hash || ""); return m ? m[1].replace(/^u-/, "u_") : null; };
+const homeHandlers = {
+  room(doc) {
+    if (doc && (drag || roomDirty || roomSaving)) return;   // my own unsaved moves win over an older copy
+    if (doc) {
+      room = { ...sampleRoom(), ...doc, layout: doc.layout };
+      const fixed = me.isOwner && migrateRoom(room);
+      if (fixed) { room = fixed; net.saveRoom(cleanRoom()).catch(() => {}); }
+    } else if (me.isOwner && !roomLoaded) {   // my first visit to my own minihome: start from the sample room
+      room = { ...sampleRoom(), ownerId: me.id, ownerNick: myNick(), intro: "", title: "어서 와, 내 방은 처음이지?" };
+      net.saveRoom(cleanRoom()).catch(() => {});
+    } else room = { ...sampleRoom(), ownerId: currentHome, ownerNick: "", intro: "", title: "아직 꾸미지 않은 방" };
+    roomLoaded = true;
+    if (drag) return;
+    bgCache.key = ""; derive(); renderProfile(); renderBgm(); renderDecor(); resolveNames();
+  },
+  pranks(list) {
+    const mine = pranks.filter((p) => !list.some((q) => q.id === p.id) && p.by === me.id && Date.now() - p.at < 5000);
+    pranks = [...list, ...mine];
+    derive();
+    for (const p of list) if (!played.has(p.id)) { if (p.at > homeOpenedAt - 3000 && p.at > (room.cleanedAt || 0)) playPrank(p); else played.add(p.id); }
+  },
+  guestbook(list) { guestbook = list; renderGuestbook(); resolveNames(); },
+  visits(list) { visits = list; renderCounter(); },
+  error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
+};
+function goHome(hid) {
+  if (!net || !hid) return;
+  if (actor.on) { if (heat) { toast("문까지 직접 도망가야 해요!"); return; } leaveRoom(); }
+  currentHome = hid; homeOpenedAt = Date.now();
+  me.isOwner = hid === me.id; role = me.isOwner ? "owner" : "visitor";
+  room = { ...sampleRoom(), ownerId: hid, ownerNick: "", intro: "", title: "" };
+  roomLoaded = false; pranks = []; botPranks = []; guestbook = []; visits = []; selectedId = null; heat = null;
+  try { if (location.hash !== "#" + homeHash(hid)) history.replaceState(null, "", "#" + homeHash(hid)); } catch {}
+  net.openHome(hid, homeHandlers);
+  pushPresence(true);
+  setTab("home");
+  bgCache.key = ""; derive(); renderProfile(); renderGuestbook(); renderCounter(); renderBgm(); renderControls(); resolveNames();
+}
+addEventListener("hashchange", () => { const h = hashHome(); if (h && h !== currentHome) goHome(h); });
+
+// 일촌: ask from their minihome, answer in mine; the 파도타기 list goes to any 일촌's minihome
+const ilchonWith = (uid) => ilchon.find((x) => x.a === uid || x.b === uid);
+const otherOf = (x) => (x.a === me.id ? x.b : x.a);
+const realName = (uid) => names[uid] || "이름 없음";
+function renderIlchon() {
+  const box = $("ilBox"); if (!box || !net) return;
+  box.replaceChildren();
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  if (!me.isOwner && currentHome) {
+    const x = ilchonWith(currentHome);
+    if (x && x.status === "ok") box.append(el("div", "il-ok", `♥ 일촌 · ${x.names?.[currentHome] || realName(currentHome)}`));
+    else if (x && x.from === me.id) box.append(el("div", "il-wait", "일촌 신청 중…"));
+    else if (x) box.append(el("div", "il-wait", "이 분이 일촌 신청을 보냈어요. 내 미니홈피에서 받아 주세요."));
+    else {
+      const b = el("button", "il-btn", "+ 일촌 신청"); b.type = "button";
+      b.addEventListener("click", () => {
+        box.replaceChildren();
+        const f = el("form", "il-form");
+        const inp = el("input"); inp.maxLength = 10; inp.placeholder = "일촌명 (예: 베프)"; inp.setAttribute("aria-label", "이 분을 부를 일촌명");
+        const ok = el("button", "btn small primary", "신청"); const no = el("button", "btn small", "취소"); no.type = "button";
+        no.addEventListener("click", renderIlchon);
+        f.append(inp, ok, no); box.append(f); inp.focus();
+        f.addEventListener("submit", (e) => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } net.askIlchon(currentHome, v).then(() => toast("일촌 신청을 보냈어요.")).catch(() => toast("신청하지 못했어요.")); });
+      });
+      box.append(b);
+    }
+  }
+  if (me.isOwner) {
+    for (const x of ilchon.filter((q) => q.status === "wait" && q.to === me.id)) {
+      const row = el("form", "il-req");
+      row.append(el("span", "", `${realName(x.from)}님의 일촌 신청 · 나를 "${x.names?.[me.id] || "일촌"}"(이)라고 불러요`));
+      const inp = el("input"); inp.maxLength = 10; inp.placeholder = "내가 부를 일촌명"; inp.setAttribute("aria-label", "내가 부를 일촌명");
+      const ok = el("button", "btn small primary", "수락"); const no = el("button", "btn small", "거절"); no.type = "button";
+      no.addEventListener("click", () => net.dropIlchon(x).catch(() => {}));
+      row.addEventListener("submit", (e) => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } net.acceptIlchon(x, v).then(() => toast("일촌이 되었어요!")).catch(() => toast("수락하지 못했어요.")); });
+      row.append(inp, ok, no); box.append(row);
+    }
+  }
+  // the 파도타기 list
+  const sel = $("surf"); sel.replaceChildren();
+  const opt = (v, t, off) => { const o = document.createElement("option"); o.value = v; o.textContent = t; o.disabled = !!off; sel.append(o); };
+  opt("", "★ 일촌 파도타기");
+  if (!me.isOwner) opt(me.id, "🏠 내 미니홈피로");
+  const mine = ilchon.filter((x) => x.status === "ok");
+  for (const x of mine) { const o = otherOf(x); if (o !== currentHome) opt(o, `${x.names?.[o] || "일촌"} (${realName(o)})`); }
+  if (!mine.length) opt("-", "아직 일촌이 없어요", true);
+  sel.value = "";
+}
+$("surf").addEventListener("change", (e) => { const v = e.target.value; e.target.value = ""; if (v && v !== "-") goHome(v); });
+
+connect().then(async (n) => {
   net = n; me = n.me;
-  role = me.isOwner ? "owner" : "visitor";
-  $("resetBtn").hidden = n.mode !== "local";
+  n.setNick?.(($("nick").value || "").trim());
   n.subscribe({
-    room(doc) {
-      if (doc && (drag || roomDirty || roomSaving)) return;   // my own unsaved moves win over an older copy
-      if (doc) {
-        room = { ...sampleRoom(), ...doc, layout: doc.layout };
-        const fixed = me.isOwner && migrateRoom(room);
-        if (fixed) { room = fixed; n.saveRoom(cleanRoom()).catch(() => {}); }
-      }
-      else if (me.isOwner && !roomLoaded && n.mode === "live") { room = { ...sampleRoom(), ownerId: me.id, ownerNick: "" }; n.saveRoom(cleanRoom()).catch(() => {}); }
-      roomLoaded = true;
-      if (drag) return;
-      bgCache.key = ""; derive(); renderProfile(); renderBgm(); renderDecor(); resolveNames();
-    },
-    pranks(list) {
-      const mine = pranks.filter((p) => !list.some((q) => q.id === p.id) && p.by === me.id && Date.now() - p.at < 5000);
-      pranks = [...list, ...mine];
-      derive();
-      for (const p of list) if (!played.has(p.id)) { if (p.at > loadedAt - 3000 && p.at > (room.cleanedAt || 0)) playPrank(p); else played.add(p.id); }
-    },
-    guestbook(list) { guestbook = list; renderGuestbook(); resolveNames(); },
     secrets(m) { secrets = { ...secrets, ...m }; renderGuestbook(); },
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
-    visits(list) { visits = list; renderCounter(); },
     peers(list) { peers = list; resolveNames(); },
+    ilchon(list) { ilchon = list; renderIlchon(); resolveNames(); },
     coins(d) { myCoins = d.coins || 0; owned = ["fist", ...(d.weapons || [])]; if (!owned.includes(weapon)) weapon = "fist"; renderCoins(); renderWeapons(); },
     error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
   });
-  renderControls(); renderProfile(); renderGuestbook(); renderBgm();
+  goHome(hashHome() || (await n.firstHome()) || me.id);
 });
-$("resetBtn").addEventListener("click", () => { net?.reset?.(); room = sampleRoom(); botPranks = []; derive(); renderProfile(); toast("예시 방으로 되돌렸어요."); });

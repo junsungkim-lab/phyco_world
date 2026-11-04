@@ -42,11 +42,11 @@ button { cursor: pointer; }
 .stitch { border: 2px dashed var(--stitch); border-radius: 16px; padding: 12px; }
 
 /* the blue binder */
-.book { position: relative; display: grid; grid-template-columns: 250px 30px minmax(0, 1fr) 84px; grid-template-rows: auto minmax(0, 1fr);
+.book { --cols: clamp(118px, calc(100% - 714px), 250px) 30px minmax(0, 1fr) 84px; position: relative; display: grid; grid-template-columns: var(--cols); grid-template-rows: auto minmax(0, 1fr);
   background: var(--frame); border: 2px solid var(--frame-ink); border-radius: 22px; padding: 12px 0 14px 14px; }
-.bhead { grid-column: 1 / -1; display: grid; grid-template-columns: 250px 30px minmax(0, 1fr) 84px; align-items: center; margin-bottom: 10px; }
+.bhead { grid-column: 1 / -1; display: grid; grid-template-columns: var(--cols); align-items: center; margin-bottom: 10px; }
 .idbox { display: grid; gap: 4px; justify-items: start; }
-.namebox { background: #fff; border: 2px solid #333; border-radius: 9px; padding: 3px 12px; font-size: 15px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.namebox { min-width: 0; background: #fff; border: 2px solid #333; border-radius: 9px; padding: 3px 12px; font-size: 15px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .counter { background: #fff; border: 2px solid #333; border-radius: 7px; padding: 0 10px; font-size: 9px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
 .counter b { color: var(--berry-ink); font-size: 13px; letter-spacing: 0; margin: 0 4px 0 2px; font-weight: 700; }
 .counter i { font-style: normal; margin: 0 4px; color: #555; }
@@ -74,9 +74,9 @@ button { cursor: pointer; }
 
 /* left page: profile */
 .portrait { display: grid; place-items: center; background: #e6e7ea; border: 1px solid #9aa3b0; padding: 8px; }
-#ownerMini { width: 168px; height: 168px; image-rendering: pixelated; max-width: 100%; }
+#ownerMini { width: 100%; max-width: 168px; height: auto; aspect-ratio: 1; image-rendering: pixelated; }
 .dots { border: 0; border-top: 2px dotted #9aa3b0; margin: 0; }
-.today-pill { white-space: nowrap; display: flex; align-items: center; gap: 6px; border: 2px solid #333; border-radius: 9px; padding: 1px 8px; font-size: 9px; letter-spacing: 0.08em; justify-self: start; }
+.today-pill { white-space: nowrap; max-width: 100%; overflow: hidden; display: flex; align-items: center; gap: 6px; border: 2px solid #333; border-radius: 9px; padding: 1px 8px; font-size: 9px; letter-spacing: 0.08em; justify-self: start; }
 .today-pill select { border: 0; background: transparent; font-size: 13px; letter-spacing: 0; padding: 0; }
 #intro { width: 100%; border: 1px solid transparent; background: transparent; resize: none; font-size: 17px; line-height: 1.45; min-height: 84px; padding: 0; }
 #intro:not([readonly]) { border-color: var(--line2); background: #fafbfc; padding: 4px; }
@@ -101,8 +101,18 @@ button { cursor: pointer; }
 .seg { display: flex; gap: 2px; padding-left: 4px; }
 .seg button { border: 2px solid #333; border-bottom: 0; background: #e6e7ea; border-radius: 7px 7px 0 0; padding: 1px 12px; font-size: 13px; }
 .seg button[aria-pressed="true"] { background: #fff; position: relative; top: 2px; }
-.surf { display: flex; align-items: center; justify-content: space-between; border: 2px solid #333; background: #d9dce1; padding: 2px 4px 2px 8px; font-size: 13px; width: 100%; text-align: left; }
-.surf::after { content: "▼"; font-size: 10px; border-left: 2px solid #333; padding-left: 5px; }
+.surfbox { margin-top: auto; gap: 6px; }
+.surf { appearance: none; -webkit-appearance: none; border: 2px solid #333; border-radius: 0; background: #d9dce1 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='14'%3E%3Cpath d='M1 0v14' stroke='%23333' stroke-width='2'/%3E%3Cpath d='M8 4h9l-4.5 6z' fill='%23333'/%3E%3C/svg%3E") no-repeat right 2px center; padding: 3px 26px 3px 8px; font-size: 13px; width: 100%; cursor: pointer; }
+.il { display: grid; gap: 6px; font-size: 12px; }
+.il-btn { border: 2px solid #333; background: #fff; padding: 2px 8px; font-size: 12px; justify-self: start; }
+.il-btn:hover { background: #fff7dc; }
+.il-ok { color: var(--berry-ink); }
+.il-wait { color: var(--muted); }
+.il-form, .il-req { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.il-req span { flex: 1 1 100%; }
+.il-form input, .il-req input { flex: 1 1 90px; min-width: 0; border: 1px solid var(--line2); padding: 2px 6px; font-size: 12px; }
+.left-in { grid-auto-rows: min-content; }
+.who-link { border: 0; background: none; padding: 0; color: var(--link); font-weight: 700; text-decoration: underline; cursor: pointer; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font-size: 11px; text-decoration: underline; justify-self: start; margin-top: 6px; }
 
 /* right page header: BGM line + a 2x2 menu table */
@@ -343,13 +353,9 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
         <div class="meter-row"><b id="meterLabel">반짝반짝</b><span><span id="meterNum">0</span> / 100</span></div>
         <div class="meter-bar"><div id="meterFill"></div></div>
       </div>
-      <div class="box roles" id="roleRow" hidden>
-        <div class="seg">
-          <button type="button" id="roleOwner" aria-pressed="true">홈주인</button>
-          <button type="button" id="roleVisitor" aria-pressed="false">손님</button>
-        </div>
-        <button type="button" class="surf" id="botBtn">★ 봇 친구 부르기</button>
-        <button type="button" class="linkbtn" id="resetBtn" hidden>예시 방으로 되돌리기</button>
+      <div class="box surfbox">
+        <div id="ilBox" class="il"></div>
+        <select id="surf" class="surf" aria-label="일촌 파도타기"><option value="">★ 일촌 파도타기</option></select>
       </div>
     </div></aside>
 
