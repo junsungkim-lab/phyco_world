@@ -155,4 +155,6 @@ in-progress
 
 - 이펙트: [pixelfx](https://github.com/patch-gg/pixelfx) `a841596`, MIT. `vendor/pixelfx/`에 쓰는 파일만
   복사했고 원본 LICENSE와 NOTICE를 함께 두었습니다.
+- 글꼴: [Galmuri](https://github.com/quiple/galmuri) 2.40.3, SIL OFL 1.1. `vendor/galmuri/`에 LICENSE와 함께 두고 빌드할 때 페이지 안에 넣습니다.
+- BGM: 쥬크박스에서 유튜브 뮤직 링크를 저장하면 BGM 줄에 "YouTube Music" 버튼이 생기고 새 탭에서 열립니다. 아티팩트 화면은 유튜브를 페이지 안에 넣는 것을 막아서 자동 재생은 안 됩니다.
 - 가구, 벽지, 바닥, 미니미, 똥·쓰레기 도트와 BGM 3곡은 이 프로토타입용으로 새로 만든 것입니다.

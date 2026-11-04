@@ -1164,6 +1164,7 @@ function renderProfile() {
   $("titleInput").value = room.title || "";
   const on = me.isOwner; $("mood").disabled = !on; $("intro").readOnly = !on; $("titleRow").hidden = !on;
   $("ownerName").textContent = (room.ownerId && names[room.ownerId]) || room.ownerNick || "주인";
+  $("ownerTop").textContent = $("ownerName").textContent;
 }
 $("mood").addEventListener("change", (e) => { room.mood = e.target.value; saveRoomSoon(); });
 $("intro").addEventListener("change", (e) => { room.intro = e.target.value.slice(0, 80); saveRoomSoon(); });
@@ -1185,6 +1186,14 @@ function renderCounter() {
   const t = today();
   $("today").textContent = visits.filter((v) => v.date === t).length;
   $("total").textContent = visits.length;
+  $("todayNum").textContent = $("today").textContent;
+}
+document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.go)));
+// small pixel logo mark: a swirl of poop, the house prank
+{
+  const M = ["......11......", ".....1221.....", "....122221....", "...11111111...", "..1222222221..", "..1111111111..", ".122222222221.", "11111111111111", "12232222322221", "12222222222221", "11111111111111"];
+  const g = $("logoMini").getContext("2d"), C = { 1: "#5b3a1e", 2: "#a8642f", 3: "#ffffff" };
+  M.forEach((row, y) => [...row].forEach((c, x) => { if (C[c]) { g.fillStyle = C[c]; g.fillRect(x + 3, y + 5, 1, 1); } }));
 }
 function messScore() {
   let s = 0;
@@ -1210,6 +1219,7 @@ function miniCanvas(look, size = 48) {
 }
 function entryName(g) { return (g.by && names[g.by]) || g.nick || "손님"; }
 function renderGuestbook() {
+  $("gbNew").hidden = !guestbook.some((g) => fmt(g.at).slice(0, 10) === fmt(Date.now()).slice(0, 10));
   const ul = $("gbList"); ul.replaceChildren();
   const n = guestbook.length;
   guestbook.slice(0, 60).forEach((g, i) => {
@@ -1319,6 +1329,10 @@ function renderBgm() {
   $("playBtn").textContent = bgm.playing ? "■" : "▶";
   $("playBtn").setAttribute("aria-label", bgm.playing ? "정지" : "재생");
   $("eq").classList.toggle("on", bgm.playing);
+  const yt = safeYt(room.yt);
+  $("ytLink").hidden = !yt; if (yt) $("ytLink").href = yt;
+  $("ytForm").hidden = !me.isOwner;
+  if (document.activeElement !== $("ytInput")) $("ytInput").value = room.yt || "";
   const ul = $("songs"); ul.replaceChildren();
   SONGS.forEach((s, i) => {
     const li = document.createElement("li");
@@ -1336,6 +1350,16 @@ function renderBgm() {
     ul.append(li);
   });
 }
+// a YouTube Music link can't play inside the page (the artifact viewer blocks YouTube embeds), so it opens in a new tab
+function safeYt(u) {
+  try { const x = new URL(String(u || "")); return x.protocol === "https:" && /^(music\.youtube\.com|(www\.|m\.)?youtube\.com|youtu\.be)$/.test(x.hostname) ? x.href : ""; } catch { return ""; }
+}
+$("ytForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("ytInput").value.trim();
+  if (v && !safeYt(v)) { toast("유튜브 뮤직 링크만 넣을 수 있어요."); return; }
+  room.yt = v; saveRoomSoon(); renderBgm(); toast(v ? "저장했어요." : "링크를 지웠어요.");
+});
 $("playBtn").addEventListener("click", () => { bgm.playing ? bgm.stop() : bgm.play(browse); renderBgm(); });
 $("prevBtn").addEventListener("click", () => { browse = (browse + SONGS.length - 1) % SONGS.length; if (bgm.playing) bgm.play(browse); renderBgm(); });
 $("nextBtn").addEventListener("click", () => { browse = (browse + 1) % SONGS.length; if (bgm.playing) bgm.play(browse); renderBgm(); });

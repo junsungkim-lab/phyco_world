@@ -1,110 +1,139 @@
 <title>phyco world</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap">
 <style>
+/*FONTS*/
 /* A 2000s "mini homepage" diary: dotted desk, framed book, left profile page, spiral rings,
    right content page with vertical tabs. One deliberate light look (a paper diary), colors set explicitly. */
+/* An early-2000s mini homepage, redrawn: grey grid desk, a white card with stitched edge, a sky-blue binder,
+   white pages on silver rings, dark-blue index tabs on the right, and a pixel font everywhere.
+   One deliberate light look, every color set explicitly. */
 :root {
-  --desk: #dfe6f3; --dots: #c9d3e8;
-  --frame: #7d8fc4; --frame-ink: #3d4a7a;   /* book cover */
-  --paper: #ffffff; --paper2: #f6f8fd;
-  --ink: #2b2f45; --muted: #6b7190; --line: #dfe3f0; --line2: #c7cde3;
-  --link: #3d63c9;                            /* blue link text, like old homepages */
-  --berry: #ff6f91; --berry-ink: #c22e5a;     /* pranks, counters */
+  --desk: #c9c9c9; --grid: #b9b9b9;
+  --card: #ffffff; --stitch: #8f98a8;
+  --frame: #5ba8dd; --frame-ink: #2f78b8;          /* the blue binder */
+  --paper: #ffffff; --paper2: #f3f4f6; --panel: #e9ebee;
+  --ink: #1f1f1f; --muted: #6a6f7a; --line: #d8dbe0; --line2: #b9bec7;
+  --link: #2a5db0;
+  --berry: #ff6f91; --berry-ink: #e02a2a;          /* counters are red */
   --mint: #2f9e8f; --sun: #ffd36b;
-  --tab: #eef1fa; --tab-on: #ffffff;
-  --display: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --tab: #2a62b0; --tab-ink: #ffffff; --tab-on: #ffffff;
+  --display: "Galmuri11", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --body: "Galmuri11", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {
-  background: var(--desk) radial-gradient(var(--dots) 1px, transparent 1px) 0 0 / 12px 12px;
-  color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5;
+  background-color: var(--desk);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 22px 22px;
+  color: var(--ink); font-family: var(--body); font-size: 13px; line-height: 1.5;
+  -webkit-font-smoothing: none; font-smooth: never;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 16px 28px;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 3px solid var(--sun); outline-offset: 1px; }
-.app { max-width: 1000px; margin: 0 auto; display: grid; gap: 8px; }
+:focus-visible { outline: 2px solid var(--sun); outline-offset: 1px; }
+.app { max-width: 1060px; margin: 0 auto; display: grid; gap: 8px; }
 
-/* top line: counter + connection */
-.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 14px; padding: 0 6px; font-size: 12px; color: var(--muted); }
-.counter { letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
-.counter b { color: var(--berry-ink); font-size: 14px; letter-spacing: 0; margin-left: 3px; }
-.counter i { font-style: normal; margin: 0 8px; color: var(--line2); }
+/* white card with a stitched edge */
+.card { background: var(--card); border-radius: 22px; padding: 10px; box-shadow: 0 2px 0 #9a9a9a; }
+.stitch { border: 2px dashed var(--stitch); border-radius: 16px; padding: 12px; }
+
+/* the blue binder */
+.book { position: relative; display: grid; grid-template-columns: 250px 30px minmax(0, 1fr) 84px; grid-template-rows: auto minmax(0, 1fr);
+  background: var(--frame); border: 2px solid var(--frame-ink); border-radius: 22px; padding: 12px 0 14px 14px; }
+.bhead { grid-column: 1 / -1; display: grid; grid-template-columns: 250px 30px minmax(0, 1fr) 84px; align-items: center; margin-bottom: 10px; }
+.idbox { display: grid; gap: 4px; justify-items: start; }
+.namebox { background: #fff; border: 2px solid #333; border-radius: 9px; padding: 3px 12px; font-size: 15px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.counter { background: #fff; border: 2px solid #333; border-radius: 7px; padding: 0 10px; font-size: 9px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+.counter b { color: var(--berry-ink); font-size: 13px; letter-spacing: 0; margin: 0 4px 0 2px; font-weight: 700; }
+.counter i { font-style: normal; margin: 0 4px; color: #555; }
+.logo { grid-column: 3; justify-self: center; display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 12px; padding: 5px 18px; box-shadow: 0 0 0 2px var(--frame-ink); }
+.logo canvas { width: 34px; height: 34px; image-rendering: pixelated; }
+.logo b { font-size: 26px; letter-spacing: 0.04em; color: #555; font-weight: 400; }
+.logo b span { color: #f06a2a; }
+.topright { grid-column: 4; justify-self: center; display: inline-flex; gap: 8px; align-items: center; }
 .badge { border: 1px solid var(--line2); background: var(--paper); border-radius: 999px; padding: 2px 10px; }
-.badge.live { border-color: var(--mint); color: var(--mint); }
-.badge.live::before { content: "●"; margin-right: 4px; animation: blink 1s steps(2) infinite; }
-@keyframes blink { 50% { opacity: 0.2; } }
 
-/* the book */
-.book { position: relative; display: grid; grid-template-columns: 230px 26px minmax(0, 1fr) 64px; background: var(--frame); border: 2px solid var(--frame-ink); border-radius: 16px; padding: 12px 0 12px 12px; box-shadow: 0 4px 0 var(--frame-ink); }
-.page { background: var(--paper); border-radius: 10px; border: 1px solid var(--frame-ink); min-width: 0; }
-.left { padding: 14px; display: grid; gap: 12px; align-content: start; background: var(--paper2); }
-.right { padding: 14px 16px 18px; display: grid; gap: 12px; align-content: start; }
-.rings { display: flex; flex-direction: column; justify-content: space-evenly; align-items: center; padding: 18px 0; }
-.rings i { display: block; width: 30px; height: 10px; border-radius: 6px; background: linear-gradient(#f4f6fb, #a8b2cf); border: 1px solid var(--frame-ink); }
+.page { background: var(--paper); border-radius: 14px; border: 2px solid #9aa3b0; min-width: 0; }
+.left { padding: 10px; }
+.left-in { background: #fff; border: 1px solid #b9bec7; border-radius: 10px; padding: 12px; display: grid; gap: 10px; align-content: start; height: 100%; }
+.right { position: relative; padding: 10px 30px 14px 14px; display: grid; gap: 10px; align-content: start; }
+.sbar { position: absolute; top: 10px; bottom: 10px; right: 8px; width: 14px; border: 1px solid #9aa3b0; background: #f3f4f6; display: flex; flex-direction: column; justify-content: space-between; align-items: center; font-size: 8px; color: #555; }
+.sbar i { display: grid; place-items: center; width: 100%; height: 14px; border-bottom: 1px solid #9aa3b0; background: #fff; font-style: normal; }
+.sbar i:last-child { border-bottom: 0; border-top: 1px solid #9aa3b0; }
+.rings { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 34px 0; }
+.rings i { display: block; width: 46px; height: 16px; margin-inline: -8px; border-radius: 9px; background: linear-gradient(#ffffff, #c9ced6 55%, #8d95a3); border: 2px solid #6b7280; box-shadow: 0 1px 0 #3c4250; }
 
-/* vertical tabs on the right edge */
-.tabs { display: flex; flex-direction: column; gap: 4px; padding-top: 34px; }
-.tabs button { border: 1px solid var(--frame-ink); border-left: 0; border-radius: 0 8px 8px 0; background: var(--tab); padding: 8px 4px; font-size: 13px; text-align: center; margin-left: -1px; color: var(--muted); }
-.tabs button[aria-current="page"] { background: var(--tab-on); color: var(--ink); font-weight: 700; box-shadow: inset 4px 0 0 var(--berry); }
+/* index tabs on the right edge */
+.tabs { display: flex; flex-direction: column; gap: 3px; padding-top: 18px; }
+.tabs button { border: 2px solid #1b4a8a; border-left: 0; border-radius: 0 12px 12px 0; background: var(--tab); color: var(--tab-ink); padding: 7px 4px; font-size: 12px; text-align: center; margin-left: -2px; }
+.tabs button[aria-current="page"] { background: var(--tab-on); color: var(--ink); font-weight: 700; border-color: #333; width: calc(100% + 6px); }
 
 /* left page: profile */
-.today-label { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); display: flex; justify-content: space-between; }
-.portrait { display: grid; place-items: center; background: #fdeef4; border: 1px solid var(--line2); border-radius: 6px; padding: 8px; }
-#ownerMini { width: 160px; height: 160px; image-rendering: pixelated; max-width: 100%; }
+.portrait { display: grid; place-items: center; background: #e6e7ea; border: 1px solid #9aa3b0; padding: 8px; }
+#ownerMini { width: 168px; height: 168px; image-rendering: pixelated; max-width: 100%; }
+.dots { border: 0; border-top: 2px dotted #9aa3b0; margin: 0; }
+.today-pill { white-space: nowrap; display: flex; align-items: center; gap: 6px; border: 2px solid #333; border-radius: 9px; padding: 1px 8px; font-size: 9px; letter-spacing: 0.08em; justify-self: start; }
+.today-pill select { border: 0; background: transparent; font-size: 13px; letter-spacing: 0; padding: 0; }
+#intro { width: 100%; border: 1px solid transparent; background: transparent; resize: none; font-size: 17px; line-height: 1.45; min-height: 84px; padding: 0; }
+#intro:not([readonly]) { border-color: var(--line2); background: #fafbfc; padding: 4px; }
+.owner-name { font-size: 15px; margin: 0; }
+.owner-name small { font-size: 11px; color: var(--muted); margin-left: 4px; }
 .field { display: grid; gap: 3px; }
-.label { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
-.left select, .left textarea, .left input { width: 100%; border: 1px solid var(--line2); border-radius: 6px; background: var(--paper); padding: 5px 7px; }
-.left textarea { resize: vertical; min-height: 64px; }
-.left textarea[readonly] { background: transparent; border-color: transparent; padding-inline: 0; resize: none; }
-.owner-name { font-family: var(--display); font-size: 18px; margin: 0; }
-.owner-name small { font-family: var(--body); font-size: 12px; color: var(--muted); margin-left: 4px; }
-.box { border-top: 1px dashed var(--line2); padding-top: 10px; display: grid; gap: 6px; }
-.box h3 { margin: 0; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 400; display: flex; justify-content: space-between; }
+.label { font-size: 11px; color: var(--muted); }
+.box { display: grid; gap: 5px; }
+.box h3 { margin: 0; font-size: 11px; color: var(--muted); font-weight: 400; display: flex; justify-content: space-between; }
 .box h3 b { color: var(--berry-ink); }
-#who { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
-#who li::before { content: "· "; color: var(--berry); }
+#who { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-size: 12px; }
+#who li::before { content: "· "; color: var(--berry-ink); }
 #who li.empty { color: var(--muted); }
 #who li.empty::before { content: ""; }
-.meter-row { display: flex; justify-content: space-between; align-items: baseline; }
-.meter-row b { font-family: var(--display); font-size: 17px; font-weight: 400; }
-.meter-row span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.meter-bar { height: 10px; border: 1px solid var(--frame-ink); border-radius: 5px; background: var(--paper); overflow: hidden; }
-#meterFill { height: 100%; width: 0; background: repeating-linear-gradient(45deg, var(--berry) 0 5px, #ff9ab3 5px 10px); transition: width 0.4s; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.seg button { border: 1px solid var(--line2); background: var(--paper); border-radius: 6px; padding: 4px; font-size: 12px; }
-.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
-.linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12px; text-decoration: underline; justify-self: start; }
+.meter-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+.meter-row b { font-size: 13px; }
+.meter-row span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.meter-bar { height: 9px; border: 1px solid #333; background: var(--paper); overflow: hidden; }
+#meterFill { height: 100%; width: 0; background: repeating-linear-gradient(45deg, var(--berry) 0 4px, #ff9ab3 4px 8px); transition: width 0.4s; }
+/* folder tabs + a select-looking bar, like the old "owner / me" switch */
+.roles { gap: 0; }
+.seg { display: flex; gap: 2px; padding-left: 4px; }
+.seg button { border: 2px solid #333; border-bottom: 0; background: #e6e7ea; border-radius: 7px 7px 0 0; padding: 1px 12px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: #fff; position: relative; top: 2px; }
+.surf { display: flex; align-items: center; justify-content: space-between; border: 2px solid #333; background: #d9dce1; padding: 2px 4px 2px 8px; font-size: 13px; width: 100%; text-align: left; }
+.surf::after { content: "▼"; font-size: 10px; border-left: 2px solid #333; padding-left: 5px; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font-size: 11px; text-decoration: underline; justify-self: start; margin-top: 6px; }
 
-/* right page header + BGM bar */
-.hp-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
-#hpTitle { font-family: var(--display); font-size: 20px; margin: 0; font-weight: 400; color: var(--link); text-wrap: balance; }
-#titleRow { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
-#titleInput { border: 1px solid var(--line2); border-radius: 6px; padding: 3px 7px; width: 220px; max-width: 100%; }
-.bgm { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line2); border-radius: 999px; padding: 3px 6px 3px 12px; background: var(--paper2); font-size: 12px; min-width: 0; }
-.eq { display: flex; gap: 2px; align-items: flex-end; height: 14px; width: 16px; flex: none; }
-.eq i { display: block; width: 4px; height: 3px; background: var(--mint); }
+/* right page header: BGM line + a 2x2 menu table */
+.rhead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: end; }
+.bgmline { grid-column: 1 / -1; display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-size: 10px; color: #333; }
+.rtitle { display: grid; gap: 2px; border-top: 2px solid #333; border-bottom: 2px solid #333; padding: 4px 6px; min-width: 0; align-self: stretch; align-content: center; }
+#hpTitle { font-size: 15px; margin: 0; font-weight: 400; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#hpTitle::before, .rtitle .song::before { content: "· "; }
+.menu4 { display: grid; grid-template-columns: repeat(2, 104px); border: 2px solid #333; }
+.menu4 button { border: 0; border-right: 1px solid #333; border-bottom: 1px solid #333; background: #fff; text-align: left; padding: 2px 8px; font-size: 14px; display: flex; align-items: center; gap: 4px; }
+.menu4 button:nth-child(2n) { border-right: 0; } .menu4 button:nth-child(n+3) { border-bottom: 0; }
+.menu4 button:hover { background: #eef4fb; }
+.menu4 .n { background: var(--berry-ink); color: #fff; font-size: 10px; line-height: 1; padding: 2px 3px; border-radius: 2px; font-weight: 700; }
+.menu4 .num { color: var(--berry-ink); font-size: 12px; margin-left: auto; }
+.bgm { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.eq { display: flex; gap: 1px; align-items: flex-end; height: 10px; width: 12px; flex: none; }
+.eq i { display: block; width: 3px; height: 2px; background: var(--mint); }
 .eq.on i { animation: eq 0.6s steps(3) infinite alternate; }
 .eq.on i:nth-child(2) { animation-delay: 0.2s; } .eq.on i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes eq { to { height: 14px; } }
-.song { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.song b { font-weight: 700; } .song span { color: var(--muted); margin-left: 6px; }
-.bgm button { border: 0; background: var(--paper); border-radius: 50%; width: 26px; height: 26px; padding: 0; font-size: 11px; flex: none; box-shadow: 0 0 0 1px var(--line2); }
-
-h2 { font-family: var(--display); font-weight: 400; font-size: 17px; margin: 0; display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
+@keyframes eq { to { height: 10px; } }
+.song { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; color: #444; }
+.song span { color: var(--muted); margin-left: 6px; font-size: 10px; }
+.bgm button { border: 1px solid #333; background: #fff; width: 18px; height: 16px; padding: 0; font-size: 8px; line-height: 1; flex: none; }
+.ytlink { font-size: 10px; color: #fff; background: #e02a2a; border-radius: 3px; padding: 1px 5px; text-decoration: none; white-space: nowrap; }
+h2 { font-family: var(--display); font-weight: 700; font-size: 15px; margin: 0; display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
 h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 .section { display: grid; gap: 8px; }
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 
 /* the mini room stage */
-.stage { position: relative; border: 1px solid var(--frame-ink); border-radius: 6px; overflow: hidden; background: #fdeef4; max-width: 100%; }
+.stage { position: relative; border: 2px solid #333; border-radius: 0; overflow: hidden; background: #fdeef4; max-width: 100%; }
 #room { display: block; width: 100%; aspect-ratio: 320 / 200; image-rendering: pixelated; touch-action: none; }
 #labels { position: absolute; inset: 0; pointer-events: none; }
 .tag-wrap { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; gap: 2px; }
@@ -134,8 +163,8 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 
 .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .controls input { border: 1px solid var(--line2); border-radius: 6px; padding: 5px 8px; width: 130px; }
-.btn { border: 1px solid var(--ink); background: var(--paper); border-radius: 7px; padding: 5px 12px; font-size: 13px; }
-.btn.primary { background: var(--berry); color: #fff; border-color: var(--berry-ink); font-weight: 700; }
+.btn { border: 2px solid #333; background: var(--paper); border-radius: 6px; padding: 5px 12px; font-size: 13px; }
+.btn.primary { background: var(--tab); color: #fff; border-color: #1b4a8a; font-weight: 700; }
 .btn.small { padding: 2px 10px; font-size: 12px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .topright { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -238,29 +267,45 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 .song-t { flex: 1 1 140px; min-width: 0; }
 #songs small { color: var(--muted); }
 #songs .tag { font-size: 11px; color: var(--mint); }
+.ytform { display: flex; gap: 6px; }
+.ytform input { flex: 1; min-width: 0; border: 1px solid var(--line2); padding: 4px 8px; }
 
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 13px; z-index: 10; max-width: calc(100% - 32px); text-align: center; }
 .foot { font-size: 11px; color: var(--muted); text-align: center; margin: 4px 0 0; }
 .foot a { color: inherit; }
 
-/* phone: one column; tabs become a row above the right page */
+/* phone: one column; the index tabs become a row above the right page */
 @media (max-width: 760px) {
-  .book { grid-template-columns: minmax(0, 1fr); padding: 10px; gap: 8px; }
+  .card { padding: 6px; border-radius: 16px; } .stitch { padding: 6px; border-radius: 12px; }
+  .book { grid-template-columns: minmax(0, 1fr); padding: 8px; gap: 8px; border-radius: 16px; }
+  .bhead { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 0; }
+  .logo { display: none; }
+  .topright { grid-column: 2; }
   .rings { display: none; }
-  .right { order: -1; }
+  .right { order: -1; padding-right: 14px; }
+  .sbar { display: none; }
   h2 { flex-wrap: wrap; }
-  .tabs { order: -2; flex-direction: row; padding: 0; gap: 3px; overflow-x: auto; }
-  .tabs button { flex: 1 0 auto; border: 1px solid var(--frame-ink); border-radius: 8px 8px 0 0; margin: 0; padding: 6px 6px; }
+  .tabs { order: -2; flex-direction: row; padding: 0; gap: 2px; overflow-x: auto; }
+  .tabs button { flex: 1 0 auto; border: 2px solid #1b4a8a; border-bottom: 0; border-radius: 9px 9px 0 0; margin: 0; padding: 5px 3px; font-size: 10px; }
+  .today-pill { max-width: 100%; overflow: hidden; }
+  .tabs button[aria-current="page"] { width: auto; }
+  .rhead { grid-template-columns: minmax(0, 1fr); }
+  .menu4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .menu4 button { font-size: 12px; padding: 2px 4px; border-bottom: 0; }
+  .menu4 button:nth-child(2n) { border-right: 1px solid #333; } .menu4 button:last-child { border-right: 0; }
+  .bhead { order: -3; }
+  .left-in { grid-template-columns: 96px minmax(0, 1fr); column-gap: 12px; }
+  .left-in > .dots { display: none; }
+  .left-in > .portrait { grid-column: 1; grid-row: 1 / span 3; align-self: start; padding: 4px; }
+  .left-in > .today-pill { grid-column: 2; grid-row: 1; }
+  .left-in > #intro { grid-column: 2; grid-row: 2; }
+  .left-in > .owner-name { grid-column: 2; grid-row: 3; }
+  .left-in > .box { grid-column: 1 / -1; }
+  #ownerMini { width: 84px; height: 84px; }
+  #intro { font-size: 14px; min-height: 48px; }
   #dock button { width: 36px; height: 36px; font-size: 18px; }
   #dock { left: 6px; bottom: 6px; gap: 4px; }
-  .tabs button[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--berry); }
-  .left { grid-template-columns: 96px minmax(0, 1fr); column-gap: 12px; }
-  .left > .today-label, .left > .box, .left > .roles { grid-column: 1 / -1; }
-  .portrait { grid-row: span 3; align-self: start; padding: 4px; }
-  #ownerMini { width: 84px; height: 84px; }
   .mini-wrap { grid-template-columns: minmax(0, 1fr); }
-  .acts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .skills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weapons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gb-body { grid-template-columns: 60px minmax(0, 1fr); }
   .gb-minibox { width: 60px; height: 60px; }
@@ -268,54 +313,71 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 </style>
 
 <div class="app">
-  <div class="top">
-    <div class="counter">TODAY <b id="today">0</b><i>|</i>TOTAL <b id="total">0</b></div>
-    <span class="topright"><span class="coin" title="내 코인">🪙 <b id="coins">0</b></span><span class="badge" id="netBadge" hidden></span></span>
-  </div>
-
+ <div class="card"><div class="stitch">
   <div class="book">
-    <aside class="page left" aria-label="프로필">
-      <div class="today-label"><span>TODAY IS…</span></div>
+    <header class="bhead">
+      <div class="idbox">
+        <div class="namebox"><span id="ownerTop">주인</span>님의 미니홈피</div>
+        <div class="counter">TODAY<b id="today">0</b><i>|</i>TOTAL<b id="total">0</b></div>
+      </div>
+      <div class="logo" aria-label="phy(co) world"><canvas id="logoMini" width="20" height="20" aria-hidden="true"></canvas><b>phy<span>(co)</span>world</b></div>
+      <span class="topright"><span class="coin" title="내 코인">🪙 <b id="coins">0</b></span><span class="badge" id="netBadge" hidden></span></span>
+    </header>
+
+    <aside class="page left" aria-label="프로필"><div class="left-in">
       <div class="portrait"><canvas id="ownerMini" width="40" height="40" aria-label="홈피 주인 미니미"></canvas></div>
-      <p class="owner-name"><span id="ownerName">주인</span><small>님의 미니홈</small></p>
-      <label class="field"><span class="label">오늘의 기분</span>
-        <select id="mood">
+      <hr class="dots">
+      <label class="today-pill">TODAY IS… ♡
+        <select id="mood" aria-label="오늘의 기분">
           <option>들뜸</option><option>행복</option><option>설렘</option><option>심심</option><option>피곤</option><option>우울</option><option>빡침</option><option>배고픔</option>
         </select>
       </label>
-      <label class="field"><span class="label">소개</span><textarea id="intro" maxlength="80"></textarea></label>
+      <textarea id="intro" maxlength="80" aria-label="소개"></textarea>
+      <hr class="dots">
+      <p class="owner-name"><span id="ownerName">주인</span></p>
       <div class="box">
         <h3>지금 방 안 <b id="whoCount">0</b></h3>
         <ul id="who"></ul>
       </div>
       <div class="box">
-        <h3>방 상태</h3>
         <div class="meter-row"><b id="meterLabel">반짝반짝</b><span><span id="meterNum">0</span> / 100</span></div>
         <div class="meter-bar"><div id="meterFill"></div></div>
       </div>
       <div class="box roles" id="roleRow" hidden>
-        <h3>나는 지금</h3>
         <div class="seg">
-          <button type="button" id="roleOwner" aria-pressed="true">주인으로</button>
-          <button type="button" id="roleVisitor" aria-pressed="false">손님으로</button>
+          <button type="button" id="roleOwner" aria-pressed="true">홈주인</button>
+          <button type="button" id="roleVisitor" aria-pressed="false">손님</button>
         </div>
-        <button type="button" class="linkbtn" id="botBtn">봇 2명 불러보기</button>
+        <button type="button" class="surf" id="botBtn">★ 봇 친구 부르기</button>
         <button type="button" class="linkbtn" id="resetBtn" hidden>예시 방으로 되돌리기</button>
       </div>
-    </aside>
+    </div></aside>
 
-    <div class="rings" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="rings" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
     <main class="page right">
-      <div class="hp-head">
-        <h1 id="hpTitle"></h1>
-        <div class="bgm" aria-label="배경음악">
-          <span class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="song"><b id="songTitle"></b><span id="songMeta"></span></span>
-          <button type="button" id="prevBtn" aria-label="이전 곡">◀◀</button>
-          <button type="button" id="playBtn" aria-label="재생">▶</button>
-          <button type="button" id="nextBtn" aria-label="다음 곡">▶▶</button>
+      <div class="sbar" aria-hidden="true"><i>▲</i><i>▼</i></div>
+      <div class="rhead">
+        <div class="bgmline">
+          <span>BGM ▸</span>
+          <span class="bgm" aria-label="배경음악">
+            <span class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+            <button type="button" id="prevBtn" aria-label="이전 곡">◀◀</button>
+            <button type="button" id="playBtn" aria-label="재생">▶</button>
+            <button type="button" id="nextBtn" aria-label="다음 곡">▶▶</button>
+            <a class="ytlink" id="ytLink" href="#" target="_blank" rel="noopener" hidden>▶ YouTube Music</a>
+          </span>
         </div>
+        <div class="rtitle">
+          <h1 id="hpTitle"></h1>
+          <span class="song"><b id="songTitle"></b><span id="songMeta"></span></span>
+        </div>
+        <nav class="menu4" aria-label="바로가기">
+          <button type="button" data-go="home">투데이 <span class="num" id="todayNum">0</span></button>
+          <button type="button" data-go="jukebox">쥬크박스</button>
+          <button type="button" data-go="bag">가방</button>
+          <button type="button" data-go="guestbook">방명록 <span class="n" id="gbNew" hidden>N</span></button>
+        </nav>
       </div>
 
       <section class="tabview section" data-tab="home">
@@ -383,19 +445,24 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
       <section class="tabview section" data-tab="jukebox" hidden>
         <h2>쥬크박스</h2>
         <ul id="songs"></ul>
+        <form class="ytform" id="ytForm" hidden>
+          <input id="ytInput" type="url" inputmode="url" placeholder="유튜브 뮤직 링크" aria-label="유튜브 뮤직 링크">
+          <button type="submit" class="btn small primary">저장</button>
+        </form>
       </section>
     </main>
 
     <nav class="tabs" aria-label="메뉴">
-      <button type="button" data-tabbtn="home">홈</button>
-      <button type="button" data-tabbtn="room">미니룸</button>
-      <button type="button" data-tabbtn="minimi">미니미</button>
-      <button type="button" data-tabbtn="guestbook">방명록</button>
-      <button type="button" data-tabbtn="bag">가방</button>
-      <button type="button" data-tabbtn="jukebox">쥬크박스</button>
+      <button type="button" data-tabbtn="home">Home</button>
+      <button type="button" data-tabbtn="room">Miniroom</button>
+      <button type="button" data-tabbtn="minimi">Minimi</button>
+      <button type="button" data-tabbtn="guestbook">Visitor</button>
+      <button type="button" data-tabbtn="bag">Bag</button>
+      <button type="button" data-tabbtn="jukebox">Jukebox</button>
     </nav>
   </div>
-  <p class="foot">효과: <a href="https://github.com/patch-gg/pixelfx" target="_blank" rel="noopener">pixelfx</a> (MIT) · 가구·미니미·곡은 이 프로토타입용 오리지널</p>
+ </div></div>
+  <p class="foot">효과: <a href="https://github.com/patch-gg/pixelfx" target="_blank" rel="noopener">pixelfx</a> (MIT) · 글꼴: <a href="https://github.com/quiple/galmuri" target="_blank" rel="noopener">Galmuri</a> (OFL) · 가구·미니미·곡은 오리지널</p>
 </div>
 
 <div id="stage" class="stage">
