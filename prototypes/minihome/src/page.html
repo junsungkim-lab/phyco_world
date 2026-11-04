@@ -120,6 +120,11 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 #timer { position: absolute; left: 6px; top: 6px; background: var(--ink); color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-variant-numeric: tabular-nums; animation: pulse 0.5s steps(2) infinite alternate; }
 #timer b { color: var(--sun); }
 @keyframes pulse { to { background: var(--berry-ink); } }
+#dock { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 6px; }
+#dock button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--ink); background: rgba(255,255,255,0.92); font-size: 22px; line-height: 1; padding: 0; display: grid; place-items: center; box-shadow: 0 2px 0 rgba(0,0,0,0.18); user-select: none; -webkit-user-select: none; }
+#dock button:active { transform: translateY(1px); background: var(--sun); }
+#dock button:disabled { opacity: 0.45; }
+.mini-preview input { border: 1px solid var(--line2); border-radius: 6px; padding: 5px 8px; width: 100%; max-width: 140px; box-sizing: border-box; text-align: center; }
 #pad { position: absolute; right: 6px; bottom: 6px; display: grid; grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(2, 32px); gap: 3px; touch-action: none; }
 #pad button { border: 1px solid var(--ink); border-radius: 7px; background: rgba(255,255,255,0.85); font-size: 12px; padding: 0; user-select: none; -webkit-user-select: none; }
 #pad button:active { background: var(--sun); }
@@ -245,7 +250,9 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
   .right { order: -1; }
   h2 { flex-wrap: wrap; }
   .tabs { order: -2; flex-direction: row; padding: 0; gap: 3px; overflow-x: auto; }
-  .tabs button { flex: 1 0 auto; border: 1px solid var(--frame-ink); border-radius: 8px 8px 0 0; margin: 0; padding: 6px 10px; }
+  .tabs button { flex: 1 0 auto; border: 1px solid var(--frame-ink); border-radius: 8px 8px 0 0; margin: 0; padding: 6px 6px; }
+  #dock button { width: 36px; height: 36px; font-size: 18px; }
+  #dock { left: 6px; bottom: 6px; gap: 4px; }
   .tabs button[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--berry); }
   .left { grid-template-columns: 96px minmax(0, 1fr); column-gap: 12px; }
   .left > .today-label, .left > .box, .left > .roles { grid-column: 1 / -1; }
@@ -292,6 +299,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
           <button type="button" id="roleOwner" aria-pressed="true">주인으로</button>
           <button type="button" id="roleVisitor" aria-pressed="false">손님으로</button>
         </div>
+        <button type="button" class="linkbtn" id="botBtn">봇 2명 불러보기</button>
         <button type="button" class="linkbtn" id="resetBtn" hidden>예시 방으로 되돌리기</button>
       </div>
     </aside>
@@ -309,39 +317,33 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
           <button type="button" id="nextBtn" aria-label="다음 곡">▶▶</button>
         </div>
       </div>
-      <label id="titleRow" hidden>홈피 제목 <input id="titleInput" maxlength="40"></label>
 
       <section class="tabview section" data-tab="home">
-        <h2>미니룸 <small>가구를 누르면 그 가구로 할 수 있는 장난이 나와요</small></h2>
         <div id="slotHome"></div>
         <div class="controls">
-          <input id="nick" maxlength="12" placeholder="내 닉네임" aria-label="닉네임">
           <button type="button" class="btn primary" id="enterBtn">놀러 들어가기</button>
           <button type="button" class="btn" id="leaveBtn" hidden>나가기</button>
-          <button type="button" class="btn" id="botBtn">친구 2명 불러보기</button>
-          <button type="button" class="btn" id="cleanBtn" hidden>싹 치우기</button>
         </div>
-        <div class="jobrow" hidden><span class="label">이번 직업</span> <b id="jobName">방에 들어가면 랜덤 전직</b></div>
-        <div class="skills" id="skillBar" hidden></div>
+      </section>
+
+      <section class="tabview section" data-tab="bag" hidden>
+        <h2>가방 <small>🪙 <span id="bagCoins">0</span></small></h2>
         <div class="weapons" id="weapons" aria-label="무기"></div>
-        <div class="acts" id="freeActions"></div>
-        <p class="hint">방향키 또는 화면을 눌러 이동. 가구를 누르거나 스페이스(A)로 때리기, 1 똥 싸기 · 2 슬라임 풀기. 가구마다 체력이 있어서 여러 번 때려야 부서져요. 손님은 장난 뒤 10초 안에 오른쪽 문으로 도망쳐야 해요.</p>
-        <div class="rules"><b>🪙 코인</b> 손님이 깽판 치는 중에 주인이 방에 들어오면 주인이 한 명당 <b>10코인</b>. 손님은 남의 방을 폐허(방 상태 80 이상)로 만들면 <b>2코인</b>.</div>
-        <h2>최근 소식 <small>방명록</small></h2>
-        <ul id="news"></ul>
       </section>
 
       <section class="tabview section" data-tab="room" hidden>
         <h2>미니룸 꾸미기</h2>
-        <p class="lock" id="decorLock">미니룸은 홈피 주인만 꾸밀 수 있어요. 대신 홈 탭에서 마음껏 어지럽힐 수 있어요.</p>
+        <p class="lock" id="decorLock">주인만 꾸밀 수 있어요.</p>
         <div id="decorTools" class="section">
+          <label id="titleRow" hidden>홈피 제목 <input id="titleInput" maxlength="40"></label>
           <div id="slotRoom"></div>
           <div class="decor-bar">
             <span id="selName"></span>
             <button type="button" class="btn small" id="flipBtn">좌우 뒤집기</button>
-            <button type="button" class="btn small" id="removeBtn">창고로 빼기</button>
+            <button type="button" class="btn small" id="removeBtn">빼기</button>
+            <button type="button" class="btn small" id="cleanBtn">싹 치우기</button>
           </div>
-          <h2>가구 상점 <small>누르면 방에 놓여요</small></h2>
+          <h2>가구</h2>
           <div class="palette" id="shop"></div>
           <h2>벽지</h2><div class="chips" id="walls"></div>
           <h2>바닥</h2><div class="chips" id="floors"></div>
@@ -349,10 +351,11 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
       </section>
 
       <section class="tabview section" data-tab="minimi" hidden>
-        <h2>내 미니미 <small>방명록, 미니룸, 이름표에 똑같이 보여요</small></h2>
+        <h2>내 미니미</h2>
         <div class="mini-wrap">
           <div class="mini-preview">
             <canvas id="preview" width="32" height="32" aria-label="미니미 미리보기"></canvas>
+            <input id="nick" maxlength="12" placeholder="닉네임" aria-label="닉네임">
             <div class="controls">
               <button type="button" class="btn small" id="randomLook">랜덤</button>
               <button type="button" class="btn small primary" id="saveLook">입히기</button>
@@ -367,7 +370,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
         <form class="gb-form" id="gbForm">
           <div id="gbMe"></div>
           <div>
-            <textarea id="gbMsg" maxlength="300" placeholder="일촌평 대신 한마디 남기고 가세요" aria-label="방명록 내용"></textarea>
+            <textarea id="gbMsg" maxlength="300" placeholder="한마디 남기기" aria-label="방명록 내용"></textarea>
             <div class="row">
               <label><input type="checkbox" id="gbSecret"> 비밀로 하기</label>
               <button type="submit" class="btn small primary">확인</button>
@@ -378,7 +381,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
       </section>
 
       <section class="tabview section" data-tab="jukebox" hidden>
-        <h2>쥬크박스 <small>직접 만든 8비트 곡 3개</small></h2>
+        <h2>쥬크박스</h2>
         <ul id="songs"></ul>
       </section>
     </main>
@@ -388,6 +391,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
       <button type="button" data-tabbtn="room">미니룸</button>
       <button type="button" data-tabbtn="minimi">미니미</button>
       <button type="button" data-tabbtn="guestbook">방명록</button>
+      <button type="button" data-tabbtn="bag">가방</button>
       <button type="button" data-tabbtn="jukebox">쥬크박스</button>
     </nav>
   </div>
@@ -398,6 +402,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
   <canvas id="room" aria-label="미니룸"></canvas>
   <div id="labels"></div>
   <div id="menu" role="menu" hidden></div>
+  <div id="dock" hidden></div>
   <div id="timer" hidden>도망! <b id="timerNum">10.0</b>초</div>
   <div id="pad" hidden>
     <button type="button" data-dir="up" aria-label="위">▲</button>

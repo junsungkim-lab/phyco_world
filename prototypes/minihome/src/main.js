@@ -523,7 +523,7 @@ async function doAction(kind, it) {
   checkRuin();
   await wait(0.25);
   actor.st = "idle"; busy = false;
-  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`${ESCAPE_SECS}초 안에 문으로 도망!`); }
   renderControls();
 }
 
@@ -545,10 +545,11 @@ async function castSkill(i) {
   done.push(`${job.name}의 ${s.name}을(를) 썼어요`);
   await wait(0.15);
   actor.st = "idle"; busy = false;
-  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+  if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`${ESCAPE_SECS}초 안에 문으로 도망!`); }
   renderControls();
 }
 function renderSkills() {
+  if (!$("skillBar")) return;   // skills are off and their bar is gone from the page
   const j = jobById(myJob);
   $("jobName").textContent = `${j.ico} ${j.name}`;
   const box = $("skillBar"); box.replaceChildren();
@@ -617,7 +618,7 @@ function attack() {
     if (D.ko.has(p.id)) done.push(`${name}을(를) ${w.name}(으)로 박살냈어요`);
     else if (!hitLogged.has(it.id)) { hitLogged.add(it.id); done.push(`${name}을(를) 후려팼어요`); }
     checkRuin();
-    if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`주인이 오고 있어요! ${ESCAPE_SECS}초 안에 문으로 도망가세요.`); }
+    if (role === "visitor" && !heat) { heat = { left: ESCAPE_SECS }; toast(`${ESCAPE_SECS}초 안에 문으로 도망!`); }
   });
 }
 function renderWeapons() {
@@ -628,12 +629,12 @@ function renderWeapons() {
     b.setAttribute("aria-pressed", String(weapon === id));
     b.innerHTML = `<span class="ico" aria-hidden="true">${w.ico}</span><b></b><small></small>`;
     b.querySelector("b").textContent = w.name;
-    b.querySelector("small").textContent = have ? `공격력 ${w.dmg} · 사거리 ${w.reach}` : `🪙 ${w.price}코인에 사기`;
+    b.querySelector("small").textContent = have ? (weapon === id ? "장착 중" : "") : `🪙 ${w.price}`;
     if (!have) b.classList.add("locked");
     b.addEventListener("click", () => {
-      if (have) { weapon = id; renderWeapons(); pushPresence(true); return; }
+      if (have) { weapon = id; renderWeapons(); renderControls(); pushPresence(true); return; }
       if (myCoins < w.price) { toast(`코인이 부족해요. ${w.name}은(는) ${w.price}코인이에요.`); return; }
-      myCoins -= w.price; owned = [...owned, id]; weapon = id; renderCoins(); renderWeapons();
+      myCoins -= w.price; owned = [...owned, id]; weapon = id; renderCoins(); renderWeapons(); renderControls();
       net?.buyWeapon(id, w.price).catch(() => {});
       toast(`${w.ico} ${w.name}을(를) 샀어요!`);
     });
@@ -670,17 +671,16 @@ function checkRuin() {
   if (messScore() >= RUIN_AT) { ruinPaid = true; earn(COIN_RUIN, "남의 집 폐허 만들기"); }
 }
 let myCoins = 0;
-function renderCoins() { $("coins").textContent = myCoins; }
+function renderCoins() { $("coins").textContent = myCoins; $("bagCoins").textContent = myCoins; }
 
 function finishVisit(caught, byOwner) {
-  const summary = done.slice(-4).join(", ");
-  const msg = caught ? `${summary} … ${byOwner ? "주인이 들어와서 현장에서 딱 걸렸어요 🚨" : "도망가다가 딱 걸렸어요 😱"}` : `${summary} … 그리고 무사히 도망갔어요 🏃`;
+  const msg = "다녀갔어요 👣";
   const e = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg, secret: false, auto: true, at: Date.now(), reply: null };
-  guestbook.unshift(e); renderGuestbook(); renderNews();
+  guestbook.unshift(e); renderGuestbook();
   net.addGuest(e).catch(() => {});
   heat = null;
   if (caught) { actor.st = "squat"; busy = true; speak("헉 들켰다...", 2); later(1.5, () => { spawn(poof, actor.x, actor.y + 2); leaveRoom(); }); }
-  else { spawn(poof, DOOR.x, DOOR.y + 4); toast("도망 성공! 방명록에 기록이 남았어요."); leaveRoom(); }
+  else { spawn(poof, DOOR.x, DOOR.y + 4); toast("도망 성공!"); leaveRoom(); }
 }
 
 function randomFloor() { const x = 50 + Math.random() * 220; return clampP(x, backY(x) + 6 + Math.random() * (Math.min(H - 4, frontY(x)) - backY(x) - 12), 6); }
@@ -1116,6 +1116,8 @@ function renderControls() {
   $("leaveBtn").hidden = !actor.on;
   document.querySelectorAll("[data-free]").forEach((b) => (b.disabled = !actor.on || busy));
   $("pad").hidden = !(actor.on && activeTab === "home");
+  $("dock").hidden = !(actor.on && role === "visitor" && activeTab === "home");
+  const fist = dock.querySelector('[data-free="atk"]'); if (fist) fist.textContent = WEAPONS[weapon].ico;
   $("roleRow").hidden = !me.isOwner;
   $("roleOwner").setAttribute("aria-pressed", String(role === "owner"));
   $("roleVisitor").setAttribute("aria-pressed", String(role === "visitor"));
@@ -1131,19 +1133,13 @@ $("botBtn").addEventListener("click", () => addBots(2));
 $("removeBtn").addEventListener("click", removeSelected);
 $("flipBtn").addEventListener("click", flipSelected);
 $("cleanBtn").addEventListener("click", cleanUp);
-const freeBox = $("freeActions");
-{
-  const b = document.createElement("button"); b.type = "button"; b.className = "act atk"; b.dataset.free = "atk";
-  b.innerHTML = `<span class="ico" aria-hidden="true">👊</span><b>때리기</b><small>스페이스</small>`;
-  b.addEventListener("click", attack);
-  freeBox.append(b);
-}
-for (const f of FREE) {
-  const b = document.createElement("button"); b.type = "button"; b.className = "act"; b.dataset.free = f.kind;
-  b.innerHTML = `<span class="ico" aria-hidden="true">${f.ico}</span><b></b><small>${f.key}</small>`;
-  b.querySelector("b").textContent = f.label;
-  b.addEventListener("click", () => doAction(f.kind, null));
-  freeBox.append(b);
+const dock = $("dock");
+for (const f of [{ kind: "atk", ico: WEAPONS.fist.ico, label: "때리기 (스페이스)" }, ...FREE.map((f) => ({ ...f, label: `${f.label} (${f.key})` }))]) {
+  const b = document.createElement("button"); b.type = "button"; b.dataset.free = f.kind;
+  b.textContent = f.ico; b.title = f.label; b.setAttribute("aria-label", f.label);
+  b.addEventListener("pointerdown", (e) => e.stopPropagation());
+  b.addEventListener("click", (e) => { e.stopPropagation(); if (f.kind === "atk") attack(); else doAction(f.kind, null); });
+  dock.append(b);
 }
 const shop = $("shop");
 for (const [type, def] of Object.entries(CATALOG)) {
@@ -1223,7 +1219,7 @@ function renderGuestbook() {
     const nm = document.createElement("b"); nm.textContent = entryName(g);
     const tm = document.createElement("time"); tm.textContent = `(${fmt(g.at)})`;
     head.append(no, nm, tm);
-    if (g.auto) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "장난 기록"; head.append(t); }
+    if (g.auto) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "방문"; head.append(t); }
     if (g.secret) { const t = document.createElement("span"); t.className = "tag lock"; t.textContent = "비밀글"; head.append(t); }
     const tools = document.createElement("span"); tools.className = "gb-tools";
     if (me.isOwner) {
@@ -1235,7 +1231,7 @@ function renderGuestbook() {
     const box = document.createElement("div"); box.className = "gb-minibox"; box.append(miniCanvas((g.by && minimiMap[g.by]) || g.look));
     const p = document.createElement("p");
     if (g.secret) { const text = secrets[g.id]; p.textContent = text != null ? text : "비밀글입니다. 홈피 주인과 쓴 사람만 볼 수 있어요."; if (text == null) p.className = "muted"; }
-    else p.textContent = g.msg;
+    else p.textContent = g.auto ? "다녀갔어요 👣" : g.msg;
     body.append(box, p);
     li.append(head, body);
     if (g.reply && g.reply.msg) {
@@ -1262,7 +1258,7 @@ function confirmDelete(tools, g) {
   tools.replaceChildren();
   const y = document.createElement("button"); y.type = "button"; y.textContent = "정말 삭제"; y.className = "danger";
   const n = document.createElement("button"); n.type = "button"; n.textContent = "취소";
-  y.addEventListener("click", () => { guestbook = guestbook.filter((x) => x.id !== g.id); net.deleteGuest(g.id).catch(() => {}); renderGuestbook(); renderNews(); });
+  y.addEventListener("click", () => { guestbook = guestbook.filter((x) => x.id !== g.id); net.deleteGuest(g.id).catch(() => {}); renderGuestbook(); });
   n.addEventListener("click", renderGuestbook);
   tools.append(y, n);
 }
@@ -1275,22 +1271,10 @@ $("gbForm").addEventListener("submit", (e) => {
   const secret = $("gbSecret").checked;
   const ent = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg: secret ? "" : msg, secret, auto: false, at: Date.now(), reply: null };
   if (secret) secrets[ent.id] = msg;
-  guestbook.unshift(ent); renderGuestbook(); renderNews();
+  guestbook.unshift(ent); renderGuestbook();
   net.addGuest(ent, secret ? msg : null).catch(() => toast("방명록을 저장하지 못했어요."));
   $("gbMsg").value = ""; $("gbSecret").checked = false;
 });
-function renderNews() {
-  const ul = $("news"); ul.replaceChildren();
-  for (const g of guestbook.slice(0, 5)) {
-    const li = document.createElement("li");
-    const b = document.createElement("b"); b.textContent = entryName(g);
-    const s = document.createElement("span"); s.textContent = g.secret ? "비밀글을 남겼어요" : g.msg;
-    const t = document.createElement("time"); t.textContent = fmt(g.at).slice(5);
-    li.append(b, s, t); ul.append(li);
-  }
-  if (!guestbook.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "아직 아무도 다녀가지 않았어요."; ul.append(li); }
-}
-
 // ---------- minimi customizer ----------
 let draftLook = null;
 function renderCustomizer() {
@@ -1379,7 +1363,7 @@ async function resolveNames() {
     const got = await net.names([...ids]);
     let changed = false;
     for (const [k, v] of Object.entries(got)) if (v && names[k] !== v) { names[k] = v; changed = true; }
-    if (changed) { renderGuestbook(); renderNews(); renderProfile(); }
+    if (changed) { renderGuestbook(); renderProfile(); }
   } finally { namesBusy = false; }
 }
 
@@ -1387,7 +1371,7 @@ async function resolveNames() {
 function loadLocalLook() { try { return JSON.parse(localStorage.getItem("phyco-look") || "null"); } catch { return null; } }
 myLook = loadLocalLook() || randomLook(Date.now());
 setTab("home");
-derive(); renderProfile(); renderGuestbook(); renderNews(); renderBgm(); renderCounter(); renderControls(); renderNet(); renderWeapons();
+derive(); renderProfile(); renderGuestbook(); renderBgm(); renderCounter(); renderControls(); renderNet(); renderWeapons();
 (function portrait(t) { drawPortrait(t / 1000); if (activeTab === "minimi") drawPreview(t / 1000); requestAnimationFrame(portrait); })(0);
 requestAnimationFrame((t) => { last = t; tick(t); });
 
@@ -1414,7 +1398,7 @@ connect().then((n) => {
       derive();
       for (const p of list) if (!played.has(p.id)) { if (p.at > loadedAt - 3000 && p.at > (room.cleanedAt || 0)) playPrank(p); else played.add(p.id); }
     },
-    guestbook(list) { guestbook = list; renderGuestbook(); renderNews(); resolveNames(); },
+    guestbook(list) { guestbook = list; renderGuestbook(); resolveNames(); },
     secrets(m) { secrets = { ...secrets, ...m }; renderGuestbook(); },
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
     visits(list) { visits = list; renderCounter(); },
