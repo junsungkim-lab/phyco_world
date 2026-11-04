@@ -43,13 +43,15 @@ async function liveNet(db, room, user) {
     },
     subscribe(h) {
       const err = (what) => (e) => h.error?.(what, e);
-      subs.push(db.doc("home/room").onSnapshot((s) => h.room(s.exists ? s.data() : null), err("room")));
-      subs.push(db.collection("pranks").orderBy("at", "asc").limit(400).onSnapshot((s) => h.pranks(s.docs.map((d) => ({ id: d.id, ...d.data() }))), err("pranks")));
-      subs.push(db.collection("guestbook").orderBy("at", "desc").limit(200).onSnapshot((s) => h.guestbook(s.docs.map((d) => ({ id: d.id, ...d.data() }))), err("guestbook")));
-      subs.push(db.collection("minimi").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data().look)); h.minimi(m); }, err("minimi")));
-      subs.push(db.collection("visits").onSnapshot((s) => h.visits(s.docs.map((d) => d.data())), err("visits")));
-      subs.push(db.collection("secret").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => Object.assign(m, d.data().posts || {})); h.secrets(m); }, () => {}));
-      if (id) subs.push(db.doc("coins/" + id).onSnapshot((s) => h.coins?.(s.exists ? s.data() : {}), () => {}));
+      // snapshot data can be read-only (frozen): hand the game its own plain copy so it can move and change things
+      const plain = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+      subs.push(db.doc("home/room").onSnapshot((s) => h.room(s.exists ? plain(s.data()) : null), err("room")));
+      subs.push(db.collection("pranks").orderBy("at", "asc").limit(400).onSnapshot((s) => h.pranks(plain(s.docs.map((d) => ({ id: d.id, ...d.data() })))), err("pranks")));
+      subs.push(db.collection("guestbook").orderBy("at", "desc").limit(200).onSnapshot((s) => h.guestbook(plain(s.docs.map((d) => ({ id: d.id, ...d.data() })))), err("guestbook")));
+      subs.push(db.collection("minimi").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data().look)); h.minimi(plain(m)); }, err("minimi")));
+      subs.push(db.collection("visits").onSnapshot((s) => h.visits(plain(s.docs.map((d) => d.data()))), err("visits")));
+      subs.push(db.collection("secret").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => Object.assign(m, d.data().posts || {})); h.secrets(plain(m)); }, () => {}));
+      if (id) subs.push(db.doc("coins/" + id).onSnapshot((s) => h.coins?.(s.exists ? plain(s.data()) : {}), () => {}));
       if (room) {
         subs.push(room.onPeers((c) => h.peers(c.peers.filter((p) => !p.sameTab).map((p) => ({ key: p.peer, by: p.by, ...p.presence })))));
       }
