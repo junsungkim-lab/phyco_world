@@ -33,6 +33,9 @@ body {
   padding-block: 16px 28px;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+/* one light look on purpose: keep form fields light even when the viewer's theme is dark */
+:root, :root[data-theme] { color-scheme: light !important; }
+input, select, textarea { background-color: #fff; color: var(--ink); }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--sun); outline-offset: 1px; }
 .app { max-width: 1060px; margin: 0 auto; display: grid; gap: 8px; }
