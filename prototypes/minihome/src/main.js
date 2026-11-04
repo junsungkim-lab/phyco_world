@@ -86,6 +86,7 @@ const WEAPONS = {
 const HP = { bed: 8, sofa: 7, tv: 4, plant: 3, lamp: 3, rug: 4, shelf: 8, table: 5, bear: 3, frame: 2, clock: 2, poster: 2, fishbowl: 2, guitar: 4 };
 const hpOf = (it) => HP[it.type] || 3;
 const COIN_CATCH = 10;   // the owner, per wrecker caught in the act
+const COIN_GUEST = 1;    // writing in someone else's guestbook, every time
 const COIN_RUIN = 2;     // a visitor, for turning someone's room into a ruin (mess 80+)
 const RUIN_AT = 80;
 const LOG = {
@@ -126,6 +127,7 @@ let role = "visitor";     // "owner" in my own minihome, "visitor" in anyone els
 let currentHome = null;   // whose minihome is open (their user id)
 let homeOpenedAt = Date.now();
 let ilchon = [];          // my 일촌 links: { id, a, b, from, to, status, names }
+let profiles = {};        // uid -> { handle, nick } from the entry screen
 
 // ---------- canvas ----------
 const canvas = $("room");
@@ -859,7 +861,7 @@ function render(now) {
 const labelBox = $("labels");
 const labelEls = new Map();
 function peerName(p) { return (p.by && names[p.by]) || p.nick || "손님"; }
-function myNick() { return (me.id && names[me.id]) || $("nick").value.trim() || "익명의 손님"; }
+function myNick() { return (me.id && (profiles[me.id]?.nick || names[me.id])) || $("nick").value.trim() || "익명의 손님"; }
 function renderLabels() {
   const want = [];
   const nowMs = Date.now();
@@ -1118,6 +1120,8 @@ function renderControls() {
   $("dock").hidden = !(actor.on && role === "visitor" && activeTab === "home");
   const fist = dock.querySelector('[data-free="atk"]'); if (fist) fist.textContent = WEAPONS[weapon].ico;
   renderIlchon();
+  // my minihome and someone else's show different menus (data-for="own" | "other")
+  document.querySelectorAll("[data-for]").forEach((b) => (b.hidden = b.dataset.for === "own" ? !me.isOwner : me.isOwner));
   $("decorLock").hidden = me.isOwner;
   $("decorTools").hidden = !me.isOwner;
   $("cleanBtn").hidden = !me.isOwner;
@@ -1186,8 +1190,8 @@ document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click"
 // small pixel logo mark: a swirl of poop, the house prank
 {
   const M = ["......11......", ".....1221.....", "....122221....", "...11111111...", "..1222222221..", "..1111111111..", ".122222222221.", "11111111111111", "12232222322221", "12222222222221", "11111111111111"];
-  const g = $("logoMini").getContext("2d"), C = { 1: "#5b3a1e", 2: "#a8642f", 3: "#ffffff" };
-  M.forEach((row, y) => [...row].forEach((c, x) => { if (C[c]) { g.fillStyle = C[c]; g.fillRect(x + 3, y + 5, 1, 1); } }));
+  const C = { 1: "#5b3a1e", 2: "#a8642f", 3: "#ffffff" };
+  for (const id of ["logoMini", "loginMark"]) { const g = $(id).getContext("2d"); M.forEach((row, y) => [...row].forEach((c, x) => { if (C[c]) { g.fillStyle = C[c]; g.fillRect(x + 3, y + 5, 1, 1); } })); }
 }
 function messScore() {
   let s = 0;
@@ -1278,7 +1282,9 @@ $("gbForm").addEventListener("submit", (e) => {
   const ent = { id: newId(), by: me.id, nick: myNick(), look: myLook, msg: secret ? "" : msg, secret, auto: false, at: Date.now(), reply: null };
   if (secret) secrets[ent.id] = msg;
   guestbook.unshift(ent); renderGuestbook();
-  net.addGuest(ent, secret ? msg : null).catch(() => toast("방명록을 저장하지 못했어요."));
+  net.addGuest(ent, secret ? msg : null)
+    .then(() => { if (currentHome && currentHome !== me.id) earn(COIN_GUEST, "방명록 남기기"); })
+    .catch(() => toast("방명록을 저장하지 못했어요."));
   $("gbMsg").value = ""; $("gbSecret").checked = false;
 });
 // ---------- minimi customizer ----------
@@ -1308,7 +1314,11 @@ function drawPreview(t) {
   preview.clearRect(0, 0, 32, 32);
   drawMinimi(preview, 16, 30, draftLook || myLook, Math.floor(t / 2) % 2 ? "walk" : "idle", t, 1, 1);
 }
-$("nick").addEventListener("change", () => { net?.setNick?.($("nick").value.trim()); resolveNames(); renderIlchon(); });
+$("nick").addEventListener("change", () => {
+  const v = $("nick").value.trim().slice(0, 12), p = profiles[me.id];
+  if (!v || !p) return;
+  net?.saveProfile({ handle: p.handle, nick: v }).then(() => toast("닉네임을 바꿨어요.")).catch(() => toast("닉네임을 저장하지 못했어요."));
+});
 $("saveLook").addEventListener("click", () => {
   myLook = { ...draftLook }; if (me.id) minimiMap[me.id] = myLook;
   net?.saveMinimi(myLook).catch(() => {});
@@ -1385,7 +1395,7 @@ async function resolveNames() {
     peers.forEach((p) => p.by && ids.add(p.by));
     const got = await net.names([...ids]);
     let changed = false;
-    for (const [k, v] of Object.entries(got)) if (v && names[k] !== v) { names[k] = v; changed = true; }
+    for (const [k, v] of Object.entries(got)) if (v && !profiles[k]?.nick && names[k] !== v) { names[k] = v; changed = true; }
     if (changed) { renderGuestbook(); renderProfile(); renderIlchon(); }
   } finally { namesBusy = false; }
 }
@@ -1399,8 +1409,13 @@ derive(); renderProfile(); renderGuestbook(); renderBgm(); renderCounter(); rend
 requestAnimationFrame((t) => { last = t; tick(t); });
 
 // ---------- homes: everyone has one; 일촌 파도타기 moves between them ----------
-const homeHash = (id) => "h-" + String(id).replace(/^u_/, "u-");
-const hashHome = () => { const m = /^#h-([A-Za-z0-9-]+)$/.exec(location.hash || ""); return m ? m[1].replace(/^u-/, "u_") : null; };
+// a minihome's address is #h-<handle> (the id picked on the entry screen), or #h-<user id> for someone without one
+const homeHash = (id) => "h-" + (profiles[id]?.handle || String(id).replace(/^u_/, "u-"));
+const hashHome = () => {
+  const m = /^#h-([A-Za-z0-9-]+)$/.exec(location.hash || ""); if (!m) return null;
+  const byHandle = Object.entries(profiles).find(([, p]) => p.handle === m[1]);
+  return byHandle ? byHandle[0] : m[1].replace(/^u-/, "u_");
+};
 const homeHandlers = {
   room(doc) {
     if (doc && (drag || roomDirty || roomSaving)) return;   // my own unsaved moves win over an older copy
@@ -1491,10 +1506,36 @@ function renderIlchon() {
 }
 $("surf").addEventListener("change", (e) => { const v = e.target.value; e.target.value = ""; if (v && v !== "-") goHome(v); });
 
+// entry screen: pick a minihome id and a nickname once; the claude.ai account already says who you are
+const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,15}$/;
+function showLogin(then) {
+  $("login").hidden = false; document.body.classList.add("locked");
+  $("loginNick").value = $("nick").value.trim();
+  setTimeout(() => $("loginId").focus(), 50);
+  $("loginForm").onsubmit = (e) => {
+    e.preventDefault();
+    const handle = $("loginId").value.trim().toLowerCase(), nick = $("loginNick").value.trim().slice(0, 12);
+    const msg = $("loginMsg");
+    if (!HANDLE_RE.test(handle)) { msg.textContent = "아이디는 영어 소문자·숫자·- 로 3~16자예요."; $("loginId").focus(); return; }
+    if (!nick) { msg.textContent = "닉네임을 적어 주세요."; $("loginNick").focus(); return; }
+    msg.textContent = "들어가는 중…";
+    net.saveProfile({ handle, nick }).then(() => {
+      profiles[me.id] = { handle, nick }; names[me.id] = nick; $("nick").value = nick;
+      $("login").hidden = true; document.body.classList.remove("locked"); then();
+    }).catch((err) => { msg.textContent = String(err?.message) === "taken" ? "이미 있는 아이디예요. 다른 아이디를 적어 주세요." : "들어가지 못했어요. 잠시 뒤 다시 해 주세요."; });
+  };
+}
+
 connect().then(async (n) => {
   net = n; me = n.me;
-  n.setNick?.(($("nick").value || "").trim());
+  let gotProfiles; const firstProfiles = new Promise((r) => (gotProfiles = r));
   n.subscribe({
+    profiles(m) {
+      profiles = m;
+      for (const [k, p] of Object.entries(m)) if (p?.nick) names[k] = p.nick;
+      if (me.id && m[me.id]?.nick && document.activeElement !== $("nick")) $("nick").value = m[me.id].nick;
+      gotProfiles(); renderProfile(); renderGuestbook(); renderIlchon();
+    },
     secrets(m) { secrets = { ...secrets, ...m }; renderGuestbook(); },
     minimi(m) { minimiMap = { ...m }; if (me.id && m[me.id]) myLook = m[me.id]; renderGuestbook(); },
     peers(list) { peers = list; resolveNames(); },
@@ -1502,5 +1543,7 @@ connect().then(async (n) => {
     coins(d) { myCoins = d.coins || 0; owned = ["fist", ...(d.weapons || [])]; if (!owned.includes(weapon)) weapon = "fist"; renderCoins(); renderWeapons(); },
     error(what) { toast(`${what} 데이터를 불러오지 못했어요.`); },
   });
-  goHome(hashHome() || (await n.firstHome()) || me.id);
+  await Promise.race([firstProfiles, new Promise((r) => setTimeout(r, 4000))]);
+  const start = async () => goHome(hashHome() || (await n.firstHome()) || me.id);
+  if (me.id && !profiles[me.id]) showLogin(() => goHome(hashHome() || me.id)); else start();
 });

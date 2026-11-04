@@ -14,6 +14,8 @@
 //   visits/<hid>__<uid>__<d> { home, by, date, at }                              one per visitor per home per day
 //   coins/<uid>              { coins, weapons, log }                              each person's own coins
 //   ilchon/<a>__<b>          { a, b, from, to, status: "wait"|"ok", names: { <uid>: 일촌명 }, at }   a < b
+//   profiles/<uid>           { handle, nick }   chosen on the entry screen; the handle is the minihome address
+//   handles/<handle>         { uid }            who owns a handle
 //   home/room                the single room of the first version; its ownerId is where newcomers land
 //
 // subscribe(h) starts the parts that don't depend on which home is open; openHome(hid, h) (re)starts the rest.
@@ -55,6 +57,7 @@ async function liveNet(db, room, user) {
     async firstHome() { try { const s = await db.doc("home/room").get(); return (s.exists && s.data().ownerId) || null; } catch { return null; } },
     subscribe(h) {
       const err = (what) => (e) => h.error?.(what, e);
+      db.collection("profiles").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data())); h.profiles(plain(m)); }, err("profiles"));
       db.collection("minimi").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => (m[d.id] = d.data().look)); h.minimi(plain(m)); }, err("minimi"));
       db.collection("secret").onSnapshot((s) => { const m = {}; s.docs.forEach((d) => Object.assign(m, d.data().posts || {})); h.secrets(plain(m)); }, () => {});
       db.collection("ilchon").onSnapshot((s) => h.ilchon(plain(s.docs.map((d) => ({ id: d.id, ...d.data() }))).filter((x) => x.a === id || x.b === id)), err("ilchon"));
@@ -87,6 +90,17 @@ async function liveNet(db, room, user) {
     async updateGuest(gid, patch) { await db.collection("guestbook").doc(gid).update(patch); },
     async deleteGuest(gid) { await db.collection("guestbook").doc(gid).delete(); },
     async saveMinimi(look) { if (id) await db.doc("minimi/" + id).set({ look }); },
+    // claim a handle (fails with "taken" when someone else has it) and save my nickname
+    async saveProfile({ handle, nick }) {
+      if (!id) throw new Error("signed out");
+      const href = db.doc("handles/" + handle), cur = await href.get();
+      if (cur.exists && cur.data().uid !== id) throw new Error("taken");
+      const pref = db.doc("profiles/" + id), old = await pref.get();
+      if (!cur.exists) await href.set({ uid: id });
+      await pref.set({ handle, nick });
+      const was = old.exists && old.data().handle;
+      if (was && was !== handle) await db.doc("handles/" + was).delete().catch(() => {});
+    },
     async addCoins(n, why) {
       if (!id) return;
       const ref = db.doc("coins/" + id), cur = await ref.get(), d = cur.exists ? cur.data() : {};
@@ -121,7 +135,7 @@ function localNet() {
   let meId = null;
   try { meId = sessionStorage.getItem("phyco-me"); } catch {}
   if (!meId) { meId = "local-" + tab; try { sessionStorage.setItem("phyco-me", meId); } catch {} }
-  const empty = () => ({ rooms: {}, pranks: [], guestbook: [], minimi: {}, visits: [], secrets: {}, coins: {}, ilchon: {}, nicks: {} });
+  const empty = () => ({ rooms: {}, pranks: [], guestbook: [], minimi: {}, visits: [], secrets: {}, coins: {}, ilchon: {}, nicks: {}, profiles: {}, handles: {} });
   const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch { return null; } };
   let data = { ...empty(), ...(load() || {}) };
   let g = null, hh = null, home = null;
@@ -139,7 +153,7 @@ function localNet() {
   };
   const emitAll = () => {
     if (g) {
-      g.minimi(plain(data.minimi)); g.secrets(plain(data.secrets));
+      g.profiles(plain(data.profiles)); g.minimi(plain(data.minimi)); g.secrets(plain(data.secrets));
       g.ilchon(plain(Object.entries(data.ilchon).map(([id, x]) => ({ id, ...x })).filter((x) => x.a === meId || x.b === meId)));
       const c = data.coins[meId] || {}; g.coins?.({ coins: c.coins || 0, weapons: c.weapons || [] });
     }
@@ -183,6 +197,12 @@ function localNet() {
     async updateGuest(gid, patch) { fresh(); const x = data.guestbook.find((q) => q.id === gid); if (x) Object.assign(x, patch); save(); },
     async deleteGuest(gid) { fresh(); data.guestbook = data.guestbook.filter((x) => x.id !== gid); save(); },
     async saveMinimi(look) { fresh(); data.minimi[meId] = look; save(); },
+    async saveProfile({ handle, nick }) {
+      fresh();
+      if (data.handles[handle] && data.handles[handle] !== meId) throw new Error("taken");
+      const was = data.profiles[meId]?.handle; if (was && was !== handle) delete data.handles[was];
+      data.handles[handle] = meId; data.profiles[meId] = { handle, nick }; data.nicks[meId] = nick; save();
+    },
     async addCoins(n) { fresh(); coinsOf().coins += n; save(); },
     async buyWeapon(w, price) { fresh(); const c = coinsOf(); c.coins -= price; c.weapons = [...new Set([...(c.weapons || []), w])]; save(); },
     async logVisit() { fresh(); const date = today(); if (!data.visits.some((v) => v.home === home && v.by === meId && v.date === date)) data.visits.push({ home, by: meId, date, at: Date.now() }); save(); },

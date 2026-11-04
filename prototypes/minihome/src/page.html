@@ -124,9 +124,8 @@ button { cursor: pointer; }
 .rtitle { display: grid; gap: 2px; border-top: 2px solid #333; border-bottom: 2px solid #333; padding: 4px 6px; min-width: 0; align-self: stretch; align-content: center; }
 #hpTitle { font-size: 15px; margin: 0; font-weight: 400; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #hpTitle::before, .rtitle .song::before { content: "· "; }
-.menu4 { display: grid; grid-template-columns: repeat(2, 104px); border: 2px solid #333; }
-.menu4 button { border: 0; border-right: 1px solid #333; border-bottom: 1px solid #333; background: #fff; text-align: left; padding: 2px 8px; font-size: 14px; display: flex; align-items: center; gap: 4px; }
-.menu4 button:nth-child(2n) { border-right: 0; } .menu4 button:nth-child(n+3) { border-bottom: 0; }
+.menu4 { display: grid; grid-template-columns: repeat(2, 104px); border: 2px solid #333; gap: 1px; background: #333; }
+.menu4 button { border: 0; background: #fff; text-align: left; padding: 2px 8px; font-size: 14px; display: flex; align-items: center; gap: 4px; }
 .menu4 button:hover { background: #eef4fb; }
 .menu4 .n { background: var(--berry-ink); color: #fff; font-size: 10px; line-height: 1; padding: 2px 3px; border-radius: 2px; font-weight: 700; }
 .menu4 .num { color: var(--berry-ink); font-size: 12px; margin-left: auto; }
@@ -283,6 +282,22 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 .ytform { display: flex; gap: 6px; }
 .ytform input { flex: 1; min-width: 0; border: 1px solid var(--line2); padding: 4px 8px; }
 
+.login { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; overflow: auto;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
+  background-color: var(--desk); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
+body.locked { overflow: hidden; }
+.login-card { width: min(360px, 100%); }
+.login-top { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--frame); border: 2px solid var(--frame-ink); border-radius: 12px; padding: 10px; }
+.login-top canvas { width: 34px; height: 34px; image-rendering: pixelated; background: #fff; border-radius: 8px; }
+.login-top b { font-size: 26px; color: #fff; font-weight: 400; letter-spacing: 0.04em; text-shadow: 2px 2px 0 var(--frame-ink); }
+.login-top b span { color: var(--sun); }
+.login-form { display: grid; gap: 8px; margin-top: 12px; }
+.login-h { margin: 0; font-weight: 700; font-size: 14px; }
+.login-form label { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; }
+.login-form input { border: 2px solid #333; padding: 5px 8px; min-width: 0; }
+.login-form .btn { padding: 7px; font-size: 14px; }
+.login-msg { margin: 0; min-height: 1.5em; color: var(--berry-ink); font-size: 12px; }
+.login-note { margin: 0; color: var(--muted); font-size: 11px; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 13px; z-index: 10; max-width: calc(100% - 32px); text-align: center; }
 .foot { font-size: 11px; color: var(--muted); text-align: center; margin: 4px 0 0; }
 .foot a { color: inherit; }
@@ -304,8 +319,7 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
   .tabs button[aria-current="page"] { width: auto; }
   .rhead { grid-template-columns: minmax(0, 1fr); }
   .menu4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .menu4 button { font-size: 12px; padding: 2px 4px; border-bottom: 0; }
-  .menu4 button:nth-child(2n) { border-right: 1px solid #333; } .menu4 button:last-child { border-right: 0; }
+  .menu4 button { font-size: 12px; padding: 2px 4px; }
   .bhead { order: -3; }
   .left-in { grid-template-columns: 96px minmax(0, 1fr); column-gap: 12px; }
   .left-in > .dots { display: none; }
@@ -384,7 +398,8 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
         <nav class="menu4" aria-label="바로가기">
           <button type="button" data-go="home">투데이 <span class="num" id="todayNum">0</span></button>
           <button type="button" data-go="jukebox">쥬크박스</button>
-          <button type="button" data-go="bag">가방</button>
+          <button type="button" data-go="room" data-for="own">미니룸</button>
+          <button type="button" data-go="bag" data-for="other">가방</button>
           <button type="button" data-go="guestbook">방명록 <span class="n" id="gbNew" hidden>N</span></button>
         </nav>
       </div>
@@ -463,10 +478,10 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
 
     <nav class="tabs" aria-label="메뉴">
       <button type="button" data-tabbtn="home">Home</button>
-      <button type="button" data-tabbtn="room">Miniroom</button>
-      <button type="button" data-tabbtn="minimi">Minimi</button>
+      <button type="button" data-tabbtn="room" data-for="own">Miniroom</button>
+      <button type="button" data-tabbtn="minimi" data-for="own">Minimi</button>
       <button type="button" data-tabbtn="guestbook">Visitor</button>
-      <button type="button" data-tabbtn="bag">Bag</button>
+      <button type="button" data-tabbtn="bag" data-for="other">Bag</button>
       <button type="button" data-tabbtn="jukebox">Jukebox</button>
     </nav>
   </div>
@@ -488,5 +503,19 @@ h2 small { font-family: var(--body); font-size: 12px; color: var(--muted); }
   </div>
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
+
+<div class="login" id="login" hidden>
+  <div class="card login-card"><div class="stitch">
+    <div class="login-top"><canvas id="loginMark" width="20" height="20" aria-hidden="true"></canvas><b>phy<span>(co)</span>world</b></div>
+    <form class="login-form" id="loginForm" autocomplete="off">
+      <p class="login-h">내 미니홈피 만들기</p>
+      <label><span>아이디</span><input id="loginId" maxlength="16" autocapitalize="none" spellcheck="false" placeholder="영어 소문자·숫자 3~16자"></label>
+      <label><span>닉네임</span><input id="loginNick" maxlength="12" placeholder="미니홈피에 보일 이름"></label>
+      <button type="submit" class="btn primary">로그인</button>
+      <p class="login-msg" id="loginMsg" role="status"></p>
+      <p class="login-note">claude.ai 계정으로 이미 본인 확인이 돼 있어 비밀번호는 받지 않아요.</p>
+    </form>
+  </div></div>
+</div>
 
 <script>/*BUNDLE*/</script>
